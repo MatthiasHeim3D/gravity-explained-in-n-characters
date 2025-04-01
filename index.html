@@ -1,372 +1,344 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <title>Gravity explained in n Characters</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        .heading {
-            text-align: center;
-            font-family: monospace;
+        /* --- CSS remains the same --- */
+        body { margin: 0; padding: 20px; background-color: #f4f4f4; display: flex; flex-direction: column; align-items: center; min-height: 100vh; box-sizing: border-box; }
+        .heading { text-align: center; font-family: monospace; margin-top: 20px; margin-bottom: 10px; }
+        .sub-heading { text-align: center; font-family: monospace; color: #555; margin-bottom: 30px; }
+        #resizableBox { position: absolute; width: 300px; height: 200px; border: 1px solid #ccc; background-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-radius: 4px; box-sizing: border-box; padding: 15px; overflow: hidden; font-size: 16px; line-height: 1.4; }
+        #boxContent { width: 100%; height: 100%; text-align: justify; font-family: monospace; overflow: hidden; word-break: break-word; }
+        .resize-handle { position: absolute; background-color: #777; border: 1px solid #fff; border-radius: 3px; z-index: 10; transition: background-color 0.2s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        .resize-handle:hover { background-color: #333; }
+        .resize-handle.corner { width: 12px; height: 12px; }
+        .resize-handle.tl { top: -7px; left: -7px; cursor: nwse-resize; }
+        .resize-handle.tr { top: -7px; right: -7px; cursor: nesw-resize; }
+        .resize-handle.bl { bottom: -7px; left: -7px; cursor: nesw-resize; }
+        .resize-handle.br { bottom: -7px; right: -7px; cursor: nwse-resize; }
+        .resize-handle.top, .resize-handle.bottom { width: 24px; height: 8px; left: 50%; transform: translateX(-50%); }
+        .resize-handle.left, .resize-handle.right { width: 8px; height: 24px; top: 50%; transform: translateY(-50%); }
+        .resize-handle.top { top: -5px; cursor: ns-resize; }
+        .resize-handle.bottom { bottom: -5px; cursor: ns-resize; }
+        .resize-handle.left { left: -5px; cursor: ew-resize; }
+        .resize-handle.right { right: -5px; cursor: ew-resize; }
+        #infoBar { position: fixed; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 12px; font-family: monospace; color: #555; z-index: 1000; }
+        #infoBar a { color: #007bff; text-decoration: none; vertical-align: middle; }
+        #infoBar a:hover { text-decoration: underline; }
+        #infoBar img { width: 16px; height: 16px; vertical-align: middle; margin: 0 3px 0 5px; }
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            #resizableBox { padding: 10px; }
+            .heading { font-size: 1.2em; }
+            .sub-heading { font-size: 0.9em; }
+            .resize-handle.corner { width: 20px; height: 20px; }
+            .resize-handle.tl { top: -11px; left: -11px; }
+            .resize-handle.tr { top: -11px; right: -11px; }
+            .resize-handle.bl { bottom: -11px; left: -11px; }
+            .resize-handle.br { bottom: -11px; right: -11px; }
+            .resize-handle.top, .resize-handle.bottom { width: 30px; height: 10px; }
+            .resize-handle.left, .resize-handle.right { width: 10px; height: 30px; }
+            .resize-handle.top { top: -6px; }
+            .resize-handle.bottom { bottom: -6px; }
+            .resize-handle.left { left: -6px; }
+            .resize-handle.right { right: -6px; }
         }
 
-        #resizableBox {
+        /* Style for the hidden measurement div */
+        #textMeasurementHelper {
             position: absolute;
-            width: 300px;
-            height: 200px;
-            border: 2px solid #000;
-            box-sizing: border-box;
-            padding: 10px;
-            overflow: hidden;
-            font-size: 16px;
-            line-height: 1.2;
-        }
-
-        /* Content area inside the box */
-        #boxContent {
-            width: 100%;
-            height: 100%;
+            visibility: hidden;
+            height: auto;
+            width: auto;
+            top: -9999px;
+            left: -9999px;
+            /* Copy relevant styles from #boxContent */
+            font-family: monospace;
             text-align: justify;
-            font-family: monospace;
-        }
-
-        /* Style for resize handles */
-        .resize-handle {
-            position: absolute;
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid #fff; /* Increased contrast by adding a border */
-        }
-
-        /* Side handles */
-        .resize-handle.top,
-        .resize-handle.bottom {
-            height: 5px;
-            left: 5px;
-            right: 5px;
-            cursor: ns-resize;
-        }
-
-        .resize-handle.left,
-        .resize-handle.right {
-            width: 5px;
-            top: 5px;
-            bottom: 5px;
-            cursor: ew-resize;
-        }
-
-        .resize-handle.top {
-            top: 0;
-        }
-
-        .resize-handle.bottom {
-            bottom: 0;
-        }
-
-        .resize-handle.left {
-            left: 0;
-        }
-
-        .resize-handle.right {
-            right: 0;
-        }
-
-        /* Corner handles */
-        .resize-handle.corner {
-            width: 10px;
-            height: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            border: 1px solid #fff; /* Increased contrast by adding a border */
-        }
-
-        .resize-handle.tl {
-            top: 0;
-            left: 0;
-            cursor: nwse-resize;
-        }
-
-        .resize-handle.tr {
-            top: 0;
-            right: 0;
-            cursor: nesw-resize;
-        }
-
-        .resize-handle.bl {
-            bottom: 0;
-            left: 0;
-            cursor: nesw-resize;
-        }
-
-        .resize-handle.br {
-            bottom: 0;
-            right: 0;
-            cursor: nwse-resize;
-        }
-
-        #infoBar {
-            position: fixed;
-            bottom: 5px;
-            left: 0;
-            width: 100%;
-            text-align: center;
-            font-size: 12px;
-            font-family: monospace;
-            z-index: 1000;
-        }
-
-        /* Media query for mobile devices */
-        @media (max-width: 1024px) {
-            #resizableBox {
-                padding: 15px;
-            }
-
-            /* Enlarge resize handles */
-            .resize-handle.top,
-            .resize-handle.bottom {
-                height: 10px;
-            }
-
-            .resize-handle.left,
-            .resize-handle.right {
-                width: 10px;
-            }
-
-            .resize-handle.corner {
-                width: 30px;
-                height: 30px;
-            }
-        }
-
-        /* Add hover effect for resize handles */
-        .resize-handle:hover {
-            background: rgba(0, 0, 0, 0.8);
-            transition: background 0.3s ease;
-        }
-
-        /* Add icons to resize handles */
-        .resize-handle.corner::before {
-            content: "↔";
-            color: #fff;
-            font-size: 12px;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            word-break: break-word;
+            /* Don't set padding here, adjust width calculation instead */
         }
     </style>
 </head>
-
 <body>
     <h1 class="heading">Gravity explained in <span id="charCount">n</span> characters</h1>
-    <h4 class="heading" style="color: #444;">Drag the edges or corners to resize the box.</h4>
+    <h4 class="sub-heading">Drag the edges or corners to resize the box.</h4>
+
     <div id="resizableBox">
         <div id="boxContent"></div>
-        <!-- Side handles -->
+        <!-- Resize Handles -->
         <div class="resize-handle top"></div>
         <div class="resize-handle right"></div>
         <div class="resize-handle bottom"></div>
         <div class="resize-handle left"></div>
-        <!-- Corner handles -->
         <div class="resize-handle corner tl"></div>
         <div class="resize-handle corner tr"></div>
         <div class="resize-handle corner bl"></div>
         <div class="resize-handle corner br"></div>
-
-        <div id="infoBar">
-            <span>Matthias Heim 2024</span> | 
-            <a href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank"><img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub" style="width: 20px; height: 20px; vertical-align: middle;"></a>
-            <a href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank">GitHub</a>
-        </div>
     </div>
 
-    <!-- Include your lookup_table.js here -->
+    <!-- Hidden div for measurements -->
+    <div id="textMeasurementHelper"></div>
+
+    <div id="infoBar">
+        <span>Matthias Heim 2024</span> |
+        <a href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank">
+            <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub">GitHub
+        </a>
+    </div>
+
+    
     <script src="lookup_table.js"></script>
+
+    <script>
+        // Dummy lookupTable for testing
+        if (typeof lookupTable === 'undefined') {
+            const lookupTable = {
+                1: "G", 5: "Mass.", 10: "Mass bends spacetime.", 25: "Mass/energy curve spacetime.",
+                50: "Objects follow shortest paths in curved spacetime created by mass/energy.",
+                100: "Gravity is the curvature of spacetime caused by mass and energy. Objects follow geodesics (shortest paths) in this curved spacetime.",
+                200: "General Relativity describes gravity not as a force, but as a consequence of the curvature of spacetime induced by the presence of mass and energy. Objects, including light, follow paths called geodesics through this curved spacetime.",
+            };
+            window.lookupTable = lookupTable;
+            console.warn("Using dummy lookupTable. Create lookup_table.js for actual content.");
+        }
+    </script>
     <script>
         (function () {
-            var resizableBox = document.getElementById('resizableBox');
-            var boxContent = document.getElementById('boxContent');
-            var handles = resizableBox.querySelectorAll('.resize-handle');
-            var isResizing = false;
-            var currentHandle;
-            var startX, startY, startWidth, startHeight, startLeft, startTop;
+            const resizableBox = document.getElementById('resizableBox');
+            const boxContent = document.getElementById('boxContent');
+            const handles = resizableBox.querySelectorAll('.resize-handle');
+            const charCountSpan = document.getElementById('charCount');
+            const measurementHelper = document.getElementById('textMeasurementHelper'); // Get helper div
 
-            // Center the box initially
-            function centerBox() {
-                var windowWidth = window.innerWidth;
-                var windowHeight = window.innerHeight;
-                var boxWidth = resizableBox.offsetWidth;
-                var boxHeight = resizableBox.offsetHeight;
-                resizableBox.style.left = (windowWidth - boxWidth) / 2 + 'px';
-                resizableBox.style.top = (windowHeight - boxHeight) / 2 + 'px';
+            let isResizing = false;
+            let currentHandle;
+            let startX, startY, startWidth, startHeight, startLeft, startTop;
+            let animationFrameId = null;
+
+            // --- Calculate realistic minimum dimensions ---
+            let calculatedMinHeight = 60; // Default fallback
+            let calculatedMinWidth = 40;  // Default fallback
+            function calculateMinDimensions() {
+                 const style = window.getComputedStyle(resizableBox);
+                 const contentStyle = window.getComputedStyle(boxContent);
+                 const fontSize = parseFloat(contentStyle.fontSize);
+                 const lineHeight = parseFloat(contentStyle.lineHeight);
+                 const paddingHeight = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+                 const paddingWidth = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+
+                 // Min height = 1 line + vertical padding + small buffer
+                 calculatedMinHeight = Math.ceil(lineHeight + paddingHeight);
+                 // Min width = approx 1 char width + horizontal padding + buffer
+                 // Using 0.6 * fontSize as rough char width estimate
+                 calculatedMinWidth = Math.ceil((fontSize * 0.6) + paddingWidth + 5);
+
+                 // Also copy styles to measurement helper here
+                 measurementHelper.style.fontSize = contentStyle.fontSize;
+                 measurementHelper.style.lineHeight = contentStyle.lineHeight;
+                 // measurementHelper.style.fontFamily = contentStyle.fontFamily; // Already set in CSS
+                 // measurementHelper.style.wordBreak = contentStyle.wordBreak; // Already set in CSS
             }
-            centerBox();
-            window.addEventListener('resize', centerBox);
+            // Calculate after styles are loaded
+            window.addEventListener('load', calculateMinDimensions);
+            // Recalculate on resize end (if needed, e.g., for font-size media queries)
+            // window.addEventListener('resize', debounce(calculateMinDimensions, 200));
 
-            handles.forEach(function (handle) {
-                handle.addEventListener('mousedown', startResize);
-                handle.addEventListener('touchstart', startResize);
+
+            function centerBox() {
+                requestAnimationFrame(() => {
+                    const windowWidth = window.innerWidth;
+                    const windowHeight = window.innerHeight;
+                    resizableBox.style.visibility = 'hidden'; resizableBox.style.display = 'block';
+                    const boxWidth = resizableBox.offsetWidth; const boxHeight = resizableBox.offsetHeight;
+                    resizableBox.style.display = ''; resizableBox.style.visibility = '';
+
+                    const headerHeight = document.querySelector('.heading').offsetHeight + document.querySelector('.sub-heading').offsetHeight;
+                    const infoBarHeight = document.getElementById('infoBar').offsetHeight + 20;
+                    const availableHeight = windowHeight - headerHeight - infoBarHeight;
+
+                    let top = (availableHeight - boxHeight) / 2 + headerHeight;
+                    let left = (windowWidth - boxWidth) / 2;
+
+                    top = Math.max(headerHeight + 10, Math.min(top, windowHeight - boxHeight - infoBarHeight - 10));
+                    left = Math.max(10, Math.min(left, windowWidth - boxWidth - 10));
+
+                    resizableBox.style.left = left + 'px';
+                    resizableBox.style.top = top + 'px';
+                    estimateCharacters(); // Initial estimate
+                });
+            }
+
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => { clearTimeout(timeout); func(...args); };
+                    clearTimeout(timeout); timeout = setTimeout(later, wait);
+                };
+            }
+
+            const debouncedCenterBox = debounce(centerBox, 150);
+            window.addEventListener('resize', debouncedCenterBox);
+            centerBox(); // Initial call
+
+            handles.forEach(handle => {
+                handle.addEventListener('mousedown', startResize, { passive: false });
+                handle.addEventListener('touchstart', startResize, { passive: false });
             });
 
             function startResize(e) {
-                e.preventDefault();
-                isResizing = true;
-                currentHandle = e.target;
+                e.preventDefault(); isResizing = true; currentHandle = e.target;
+                resizableBox.style.userSelect = 'none'; document.body.style.cursor = getComputedStyle(currentHandle).cursor;
 
-                if (e.type === 'touchstart') {
-                    startX = e.touches[0].clientX;
-                    startY = e.touches[0].clientY;
-                } else {
-                    startX = e.clientX;
-                    startY = e.clientY;
-                }
+                const touch = e.type === 'touchstart' ? e.touches[0] : e;
+                startX = touch.clientX; startY = touch.clientY;
+                startWidth = resizableBox.offsetWidth; startHeight = resizableBox.offsetHeight;
+                startLeft = resizableBox.offsetLeft; startTop = resizableBox.offsetTop;
 
-                var rect = resizableBox.getBoundingClientRect();
-                startWidth = rect.width;
-                startHeight = rect.height;
-                startLeft = rect.left;
-                startTop = rect.top;
+                resizableBox.style.width = startWidth + 'px'; resizableBox.style.height = startHeight + 'px';
+                resizableBox.style.left = startLeft + 'px'; resizableBox.style.top = startTop + 'px';
+                resizableBox.style.right = 'auto'; resizableBox.style.bottom = 'auto';
 
-                // Ensure left and top are set in pixels
-                resizableBox.style.left = startLeft + 'px';
-                resizableBox.style.top = startTop + 'px';
-                resizableBox.style.right = 'auto';
-                resizableBox.style.bottom = 'auto';
+                // Ensure minimum dimensions are up-to-date before resize starts
+                calculateMinDimensions();
 
-                document.addEventListener('mousemove', resizeBox);
-                document.addEventListener('touchmove', resizeBox);
+                document.addEventListener('mousemove', handleMove, { passive: false });
+                document.addEventListener('touchmove', handleMove, { passive: false });
                 document.addEventListener('mouseup', stopResize);
                 document.addEventListener('touchend', stopResize);
             }
 
-            function resizeBox(e) {
+            function handleMove(e) {
                 if (!isResizing) return;
-
-                var clientX, clientY;
-                if (e.type === 'touchmove') {
-                    clientX = e.touches[0].clientX;
-                    clientY = e.touches[0].clientY;
-                } else {
-                    clientX = e.clientX;
-                    clientY = e.clientY;
-                }
-
-                var dx = clientX - startX;
-                var dy = clientY - startY;
-
-                if (currentHandle.classList.contains('right')) {
-                    resizableBox.style.width = startWidth + dx + 'px';
-                } else if (currentHandle.classList.contains('left')) {
-                    resizableBox.style.width = startWidth - dx + 'px';
-                    resizableBox.style.left = startLeft + dx + 'px';
-                }
-
-                if (currentHandle.classList.contains('bottom')) {
-                    resizableBox.style.height = startHeight + dy + 'px';
-                } else if (currentHandle.classList.contains('top')) {
-                    resizableBox.style.height = startHeight - dy + 'px';
-                    resizableBox.style.top = startTop + dy + 'px';
-                }
-
-                // Corner handles
-                if (currentHandle.classList.contains('tl')) {
-                    // Top-left corner
-                    resizableBox.style.width = startWidth - dx + 'px';
-                    resizableBox.style.left = startLeft + dx + 'px';
-                    resizableBox.style.height = startHeight - dy + 'px';
-                    resizableBox.style.top = startTop + dy + 'px';
-                } else if (currentHandle.classList.contains('tr')) {
-                    // Top-right corner
-                    resizableBox.style.width = startWidth + dx + 'px';
-                    resizableBox.style.height = startHeight - dy + 'px';
-                    resizableBox.style.top = startTop + dy + 'px';
-                } else if (currentHandle.classList.contains('bl')) {
-                    // Bottom-left corner
-                    resizableBox.style.width = startWidth - dx + 'px';
-                    resizableBox.style.left = startLeft + dx + 'px';
-                    resizableBox.style.height = startHeight + dy + 'px';
-                } else if (currentHandle.classList.contains('br')) {
-                    // Bottom-right corner
-                    resizableBox.style.width = startWidth + dx + 'px';
-                    resizableBox.style.height = startHeight + dy + 'px';
-                }
-
-                estimateCharacters();
-            }
-
-            function stopResize(e) {
-                isResizing = false;
-                document.removeEventListener('mousemove', resizeBox);
-                document.removeEventListener('touchmove', resizeBox);
-                document.removeEventListener('mouseup', stopResize);
-                document.removeEventListener('touchend', stopResize);
-            }
-
-            function getClosestKey(obj, key) {
-                return Object.keys(obj).reduce(function (prev, curr) {
-                    return (Math.abs(curr - key) < Math.abs(prev - key) ? curr : prev);
+                e.preventDefault();
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                animationFrameId = requestAnimationFrame(() => {
+                    performResize(e);
+                    estimateCharacters(); // Estimate on each frame
                 });
             }
 
-            function estimateCharacters() {
-                var width = resizableBox.clientWidth - 20; // Subtract padding
-                var height = resizableBox.clientHeight - 20; // Subtract padding
-                var fontSize = parseFloat(window.getComputedStyle(resizableBox).fontSize);
-                var lineHeight = fontSize * 1.2;
+            function performResize(e) {
+                 const touch = e.type === 'touchmove' ? e.touches[0] : e;
+                 const clientX = touch.clientX; const clientY = touch.clientY;
+                 let dx = clientX - startX; let dy = clientY - startY;
+                 let newWidth = startWidth; let newHeight = startHeight;
+                 let newLeft = startLeft; let newTop = startTop;
 
-                // Average character width estimation
-                var avgCharWidth = fontSize * 0.6;
+                 // Use calculated minimums
+                 const minWidth = calculatedMinWidth;
+                 const minHeight = calculatedMinHeight;
 
-                // Estimate characters per line and number of lines
-                var charsPerLine = Math.floor(width / avgCharWidth);
-                var lines = Math.floor(height / lineHeight);
+                 if (currentHandle.classList.contains('right') || currentHandle.classList.contains('tr') || currentHandle.classList.contains('br')) {
+                    newWidth = Math.max(minWidth, startWidth + dx);
+                 }
+                 if (currentHandle.classList.contains('bottom') || currentHandle.classList.contains('bl') || currentHandle.classList.contains('br')) {
+                     newHeight = Math.max(minHeight, startHeight + dy);
+                 }
+                 if (currentHandle.classList.contains('left') || currentHandle.classList.contains('tl') || currentHandle.classList.contains('bl')) {
+                     const potentialWidth = startWidth - dx;
+                     if (potentialWidth >= minWidth) { newWidth = potentialWidth; newLeft = startLeft + dx; }
+                     else { dx = startWidth - minWidth; newWidth = minWidth; newLeft = startLeft + dx; }
+                 }
+                if (currentHandle.classList.contains('top') || currentHandle.classList.contains('tl') || currentHandle.classList.contains('tr')) {
+                     const potentialHeight = startHeight - dy;
+                     if (potentialHeight >= minHeight) { newHeight = potentialHeight; newTop = startTop + dy; }
+                     else { dy = startHeight - minHeight; newHeight = minHeight; newTop = startTop + dy; }
+                 }
 
-                var totalChars = charsPerLine * lines;
+                 resizableBox.style.width = newWidth + 'px';
+                 resizableBox.style.height = newHeight + 'px';
+                 resizableBox.style.left = newLeft + 'px';
+                 resizableBox.style.top = newTop + 'px';
+            }
 
-                var maxChars = Math.max(...Object.keys(lookupTable).map(Number));
+            function stopResize() {
+                if (!isResizing) return;
+                isResizing = false;
+                resizableBox.style.userSelect = ''; document.body.style.cursor = '';
+                if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
 
-                var overflow = true;
-                var low = 0;
-                var high = maxChars;
-                var closestCount = 0;
+                document.removeEventListener('mousemove', handleMove);
+                document.removeEventListener('touchmove', handleMove);
+                document.removeEventListener('mouseup', stopResize);
+                document.removeEventListener('touchend', stopResize);
+                estimateCharacters(); // Final accurate estimation
+            }
 
-                while (low <= high) {
-                    var mid = Math.floor((low + high) / 2);
-                    closestCount = getClosestKey(lookupTable, mid);
+             function estimateCharacters() {
+                const style = window.getComputedStyle(resizableBox);
+                const paddingWidth = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+                const paddingHeight = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
 
-                    boxContent.textContent = lookupTable[closestCount] || "No string available for this character count.";
-                    document.getElementById('charCount').textContent = closestCount;
+                // Calculate available content area dimensions
+                const contentWidth = resizableBox.clientWidth - paddingWidth;
+                const contentHeight = resizableBox.clientHeight - paddingHeight;
 
-                    // Compute if the box overflows
-                    var contentHeight = boxContent.scrollHeight;
-                    var contentWidth = boxContent.scrollWidth;
-                    overflow = contentHeight > height || contentWidth > width;
+                 // Ensure dimensions are positive before proceeding
+                 if (contentWidth <= 0 || contentHeight <= 0) {
+                    if (charCountSpan.textContent !== '0') charCountSpan.textContent = '0';
+                    if (boxContent.textContent !== '') boxContent.textContent = '';
+                    return;
+                 }
 
-                    if (overflow) {
-                        high = mid - 1;
+                const previousText = boxContent.textContent;
+                const previousCount = charCountSpan.textContent;
+
+                const availableKeys = Object.keys(lookupTable).map(Number).sort((a, b) => a - b);
+                if (availableKeys.length === 0) {
+                    if (charCountSpan.textContent !== '0') charCountSpan.textContent = '0';
+                    if (boxContent.textContent !== 'lookupTable is empty.') boxContent.textContent = 'lookupTable is empty.';
+                    return;
+                }
+
+                let bestFitKey = 0;
+                let low = 0;
+                let high = availableKeys.length - 1;
+
+                 // --- Measurement using Helper Div ---
+                 measurementHelper.style.width = contentWidth + 'px'; // Set width constraint
+
+                while(low <= high) {
+                    let midIndex = Math.floor((low + high) / 2);
+                    let currentKey = availableKeys[midIndex];
+
+                    measurementHelper.textContent = lookupTable[currentKey]; // Use helper div
+                    // Check overflow using helper div's scroll dimensions
+                    const overflows = measurementHelper.scrollHeight > contentHeight || measurementHelper.scrollWidth > contentWidth;
+
+                    if (overflows) {
+                        high = midIndex - 1;
                     } else {
-                        low = mid + 1;
+                        bestFitKey = currentKey;
+                        low = midIndex + 1;
                     }
                 }
 
-                var tryCount = closestCount;
-                // Ensure the final closestCount does not cause overflow
-                while (overflow && tryCount > 0) {
-                    closestCount = getClosestKey(lookupTable, tryCount);
+                 // --- Post-Search Check for Smallest Item (using helper) ---
+                 if (bestFitKey === 0 && availableKeys.length > 0) {
+                     const smallestKey = availableKeys[0];
+                     measurementHelper.textContent = lookupTable[smallestKey];
+                     const smallestOverflows = measurementHelper.scrollHeight > contentHeight || measurementHelper.scrollWidth > contentWidth;
+                     if (!smallestOverflows) {
+                         bestFitKey = smallestKey;
+                     }
+                 }
+                 // --- Measurement Done ---
 
-                    boxContent.textContent = lookupTable[closestCount] || "No string available for this character count.";
-                    document.getElementById('charCount').textContent = closestCount;
 
-                    var contentHeight = boxContent.scrollHeight;
-                    var contentWidth = boxContent.scrollWidth;
-                    overflow = contentHeight > height || contentWidth > width;
+                // --- Final DOM Update (only if changed) ---
+                const finalKey = bestFitKey;
+                const finalText = lookupTable[finalKey] || "";
 
-                    tryCount--;
+                if (String(finalKey) !== previousCount || finalText !== previousText) {
+                    charCountSpan.textContent = finalKey;
+                    boxContent.textContent = finalText; // Update the *actual* content div
                 }
             }
 
-            // Initial estimation on page load
-            estimateCharacters();
         })();
     </script>
-</body>
 
+</body>
 </html>
