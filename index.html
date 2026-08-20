@@ -259,6 +259,15 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
 
 .apple.is-dragging { cursor: grabbing; }
 
+.physics-debug-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
 /* Every splash on screen shares this one layer. ASCII art cannot be alpha
    blended, so two splashes that overlap are composited onto a single character
    grid rather than stacked as separate elements. The layer spans the viewport
@@ -505,6 +514,10 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var STONE_DRAG_COEFFICIENT = 0.8;  // irregular/bluff body
   var APPLE_ROTATIONAL_DRAG = 0.2;
   var STONE_ROTATIONAL_DRAG = 0.8;
+  var AIR_LINEAR_DAMPING = 0.001;
+  var AIR_ANGULAR_DAMPING = 0.001;
+  var WATER_LINEAR_DAMPING = 2.5;
+  var WATER_ANGULAR_DAMPING = 1.2;
   var PIXELS_PER_METER = APPLE_COLLISION_RADIUS / APPLE_RADIUS_METERS;
   var PHYSICS_STEP = 1 / 120;
   var WALL_THICKNESS = 24;
@@ -537,7 +550,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   physicsWorld.setContinuousPhysics(true);
   var dragAnchorBody = physicsWorld.createBody();
   var vesselBodies = [];
+  var vesselDebugRects = [];
   var activeDrags = Object.create(null);
+  var physicsDebugCanvas = null;
+  var physicsDebugEnabled = false;
+  var physicsDebugAllowed = !/(^|\.)gitlab\.io$/i.test(window.location.hostname) &&
+    window.location.hostname.toLowerCase() !== 'matthiasheim3d.github.io';
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -1213,6 +1231,105 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     apples.splice(index, 1);
   }
 
+  function drawPhysicsDebug() {
+    if (!physicsDebugEnabled || !physicsDebugCanvas) return;
+
+    var width = window.innerWidth;
+    var height = window.innerHeight;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var pixelWidth = Math.round(width * dpr);
+    var pixelHeight = Math.round(height * dpr);
+    if (physicsDebugCanvas.width !== pixelWidth || physicsDebugCanvas.height !== pixelHeight) {
+      physicsDebugCanvas.width = pixelWidth;
+      physicsDebugCanvas.height = pixelHeight;
+    }
+
+    var ctx = physicsDebugCanvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    // Static Planck boxes: the two walls and floor of the open vessel.
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = 'rgba(14, 165, 233, .9)';
+    ctx.fillStyle = 'rgba(14, 165, 233, .07)';
+    for (var i = 0; i < vesselDebugRects.length; i++) {
+      var rect = vesselDebugRects[i];
+      ctx.fillRect(rect.x - rect.width / 2, rect.y - rect.height / 2, rect.width, rect.height);
+      ctx.strokeRect(rect.x - rect.width / 2, rect.y - rect.height / 2, rect.width, rect.height);
+    }
+
+    for (i = 0; i < apples.length; i++) {
+      var apple = apples[i];
+      var isStone = apple.el.classList.contains('stone');
+      var isGreen = apple.el.classList.contains('green-apple');
+      var color = isStone ? '161, 98, 7' : (isGreen ? '22, 163, 74' : '225, 29, 72');
+
+      // The dotted rectangle is the alpha-measured SVG box; the solid polygon
+      // is the actual collision fixture, transformed by the Planck body.
+      ctx.save();
+      ctx.translate(apple.x, apple.y);
+      ctx.rotate(apple.body.getAngle());
+      ctx.setLineDash([2, 3]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(' + color + ', .45)';
+      ctx.strokeRect(-apple.visualWidth / 2, -apple.visualHeight / 2,
+        apple.visualWidth, apple.visualHeight);
+      ctx.restore();
+
+      ctx.beginPath();
+      for (var j = 0; j < apple.collisionVertices.length; j++) {
+        var worldPoint = apple.body.getWorldPoint(apple.collisionVertices[j]);
+        var px = worldPoint.x * PIXELS_PER_METER;
+        var py = worldPoint.y * PIXELS_PER_METER;
+        if (j === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(' + color + ', .95)';
+      ctx.fillStyle = 'rgba(' + color + ', .11)';
+      ctx.fill();
+      ctx.stroke();
+
+      var center = apple.body.getWorldCenter();
+      var centerX = center.x * PIXELS_PER_METER;
+      var centerY = center.y * PIXELS_PER_METER;
+      ctx.beginPath();
+      ctx.moveTo(centerX - 4, centerY);
+      ctx.lineTo(centerX + 4, centerY);
+      ctx.moveTo(centerX, centerY - 4);
+      ctx.lineTo(centerX, centerY + 4);
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+    ctx.font = '11px ui-monospace, SFMono-Regular, Consolas, monospace';
+    ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'rgba(226, 232, 240, .82)'
+      : 'rgba(30, 41, 59, .78)';
+    ctx.fillText('PHYSICS  ·  Esc to hide', 12, 20);
+  }
+
+  function initPhysicsDebug() {
+    if (!physicsDebugAllowed) return;
+    physicsDebugCanvas = document.createElement('canvas');
+    physicsDebugCanvas.className = 'physics-debug-overlay';
+    physicsDebugCanvas.setAttribute('aria-hidden', 'true');
+    physicsDebugCanvas.hidden = true;
+    document.body.appendChild(physicsDebugCanvas);
+
+    window.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || e.repeat) return;
+      e.preventDefault();
+      physicsDebugEnabled = !physicsDebugEnabled;
+      physicsDebugCanvas.hidden = !physicsDebugEnabled;
+      if (physicsDebugEnabled) drawPhysicsDebug();
+    });
+  }
+
   function addVesselBox(x, y, width, height) {
     var body = physicsWorld.createBody({
       type: 'static',
@@ -1223,6 +1340,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       { friction: 0.42, restitution: 0.04 }
     );
     vesselBodies.push(body);
+    vesselDebugRects.push({ x: x, y: y, width: width, height: height });
   }
 
   function syncVesselBodies() {
@@ -1230,9 +1348,13 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       physicsWorld.destroyBody(vesselBodies[i]);
     }
     vesselBodies = [];
+    vesselDebugRects = [];
 
     var rect = box.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    if (rect.width <= 0 || rect.height <= 0) {
+      drawPhysicsDebug();
+      return;
+    }
 
     // These three rigid bodies form a U: the top is genuinely open. Walls sit
     // outside the visible glass, so their inner faces match its exact edges.
@@ -1255,10 +1377,14 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       rect.width,
       WALL_THICKNESS
     );
+    drawPhysicsDebug();
   }
 
   function wakeApples() {
-    if (!apples.length) return;
+    if (!apples.length) {
+      drawPhysicsDebug();
+      return;
+    }
     for (var i = 0; i < apples.length; i++) apples[i].body.setAwake(true);
     ensureAppleFrame();
   }
@@ -1286,6 +1412,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         (4 * Math.pow(apple.radiusMeters, 3));
 
       if (submerged > 0 && y - apple.visualRadius < vessel.bottom) {
+        body.setLinearDamping(AIR_LINEAR_DAMPING + WATER_LINEAR_DAMPING * submerged);
+        body.setAngularDamping(AIR_ANGULAR_DAMPING + WATER_ANGULAR_DAMPING * submerged);
         var velocity = body.getLinearVelocity();
         // The water is stationary, so body velocity is also velocity relative
         // to the fluid. Use the actually submerged projected area for drag.
@@ -1316,6 +1444,9 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         var formTorque = 0.5 * WATER_DENSITY * apple.rotationalDragCoefficient *
           wetArea * radiusCubed * angularVelocity * Math.abs(angularVelocity);
         body.applyTorque(-viscousTorque - formTorque, false);
+      } else {
+        body.setLinearDamping(AIR_LINEAR_DAMPING);
+        body.setAngularDamping(AIR_ANGULAR_DAMPING);
       }
     }
   }
@@ -1372,6 +1503,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     // The obstacle geometry changes with every physics step, so wrapping and
     // the selected character budget are recomputed in the same animation frame.
     render();
+    drawPhysicsDebug();
 
     if (apples.some(function (apple) { return apple.body.isAwake(); })) {
       appleFrame = requestAnimationFrame(animateApples);
@@ -1412,8 +1544,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       position: Physics.Vec2(x / PIXELS_PER_METER, y / PIXELS_PER_METER),
       angle: angle,
       bullet: true,
-      linearDamping: 0.001,
-      angularDamping: 0.001
+      linearDamping: AIR_LINEAR_DAMPING,
+      angularDamping: AIR_ANGULAR_DAMPING
     });
     body.createFixture(new Physics.Polygon(collision.vertices), {
       density: fixtureDensity,
@@ -1432,6 +1564,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       visualRadius: visualRadius,
       collisionTop: collision.top,
       collisionBottom: collision.bottom,
+      collisionVertices: collision.vertices,
       wrapRadiusX: visualWidth / 2 + 5,
       wrapRadiusY: visualHeight / 2 + 5,
       radiusMeters: radiusMeters,
@@ -1570,6 +1703,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     queueRender();
   }, 120));
 
+  initPhysicsDebug();
   measure();
   centerBox();
   render();
