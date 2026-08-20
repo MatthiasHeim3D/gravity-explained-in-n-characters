@@ -155,7 +155,7 @@ body {
 
 /* ------------------------------------------------------------------ lake */
 #lake {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
@@ -430,6 +430,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var LAKE_MAX_BANK = 130;
   var LAKE_MAX_WATER = 720;   // wide screens stop widening the water here
   var LAKE_CREST = 34;        // how far the bank climbs above the waterline
+  var LAKE_CURVE_STEPS = 18;  // segments per bank, for the collider line
   var LAKE_SOIL = 13;         // depth of the green layer over the brown
 
   // Vegetation is placed from a fixed pool of random numbers rather than fresh
@@ -639,16 +640,17 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   /* ----------------------------------------------------------------- lake */
 
-  // The lake is drawn, never laid out. Everything here is derived from the
-  // water's rectangle and the basin curve: the banks sweep out from the
-  // waterline up to a crest, the earth fills the rest down to the stage floor,
-  // and the greenery is planted along the two bank curves.
+  // The lake is drawn, never laid out. Everything here comes out of one
+  // geometry, measured in viewport coordinates -- the same space the physics
+  // bodies live in, so the picture and the colliders cannot drift apart. The
+  // water keeps its maximum width; the shore always runs on to both edges of
+  // the browser, flat once it has climbed to the crest.
 
   function lakeRandom(i) { return lakeNoise[i % lakeNoise.length]; }
   function round1(v) { return Math.round(v * 10) / 10; }
 
-  // A bank, as a cubic from the outer crest down to the water's edge: it lies
-  // almost flat along the top, then rolls over and drops into the water.
+  // A bank, as a cubic from the crest down to the water's edge: it lies almost
+  // flat where it meets the flat shore, then rolls over and drops in.
   function shoreCurve(outerX, crestY, waterX, waterY) {
     var run = waterX - outerX;
     var fall = waterY - crestY;
@@ -666,19 +668,69 @@ var prepareWithSegments = Pretext.prepareWithSegments;
            3 * u * t * t * c[axis + '2'] + t * t * t * c[axis + '3'];
   }
 
-  function curveDown(c) {   // outer crest -> water
+  function curvePoint(c, t) {
+    return { x: curveAt(c, t, 'x'), y: curveAt(c, t, 'y') };
+  }
+
+  function curveDown(c) {   // crest -> water
     return 'C' + round1(c.x1) + ',' + round1(c.y1) +
            ' ' + round1(c.x2) + ',' + round1(c.y2) +
            ' ' + round1(c.x3) + ',' + round1(c.y3);
   }
 
-  function curveUp(c) {     // the same bank walked water -> outer crest
+  function curveUp(c) {     // the same bank walked water -> crest
     return 'C' + round1(c.x2) + ',' + round1(c.y2) +
            ' ' + round1(c.x1) + ',' + round1(c.y1) +
            ' ' + round1(c.x0) + ',' + round1(c.y0);
   }
 
-  // The green skin over the brown: the bank curve, and the same curve dropped
+  function lakeGeometry() {
+    var rect = box.getBoundingClientRect();
+    var sw = window.innerWidth, sh = window.innerHeight;
+    if (rect.width <= 0 || rect.height <= 0 || sw <= 0 || sh <= 0) return null;
+
+    var waterY = content.getBoundingClientRect().top;
+    var crestY = Math.max(0, waterY - LAKE_CREST);
+    var bank = clamp((sw - rect.width) / 2, LAKE_MIN_BANK, LAKE_MAX_BANK);
+    var crestL = Math.max(0, rect.left - bank);
+    var crestR = Math.min(sw, rect.right + bank);
+
+    var floor = basinPoints(rect.width, rect.bottom,
+                            basinRise(rect.width, rect.bottom - waterY), 40);
+    for (var i = 0; i < floor.length; i++) floor[i].x += rect.left;
+
+    return {
+      sw: sw, sh: sh, bank: bank,
+      waterL: rect.left, waterR: rect.right, waterY: waterY, bottomY: rect.bottom,
+      crestY: crestY, crestL: crestL, crestR: crestR,
+      left: shoreCurve(crestL, crestY, rect.left, waterY),
+      right: shoreCurve(crestR, crestY, rect.right, waterY),
+      floor: floor
+    };
+  }
+
+  // The ground line from one edge of the browser to the other: flat shore,
+  // bank, the wall down into the water, the bed, and back up the far side.
+  // Both the colliders and nothing else read this -- the drawing rebuilds the
+  // same shape in path form, from the same geometry.
+  function terrainPoints(g) {
+    var points = [{ x: -WALL_THICKNESS, y: g.crestY }, { x: g.crestL, y: g.crestY }];
+    var i;
+
+    for (i = 1; i <= LAKE_CURVE_STEPS; i++) {
+      points.push(curvePoint(g.left, i / LAKE_CURVE_STEPS));
+    }
+    for (i = 0; i < g.floor.length; i++) points.push(g.floor[i]);
+    points.push({ x: g.waterR, y: g.waterY });
+    for (i = LAKE_CURVE_STEPS - 1; i >= 0; i--) {
+      points.push(curvePoint(g.right, i / LAKE_CURVE_STEPS));
+    }
+    points.push({ x: g.sw + WALL_THICKNESS, y: g.crestY });
+
+    return points;
+  }
+
+  // The green skin over the brown: the shore line, and the same line dropped
   // by the soil depth, closed into a band.
   function shoreBand(c) {
     return 'M' + round1(c.x0) + ',' + round1(c.y0) + curveDown(c) +
@@ -688,29 +740,49 @@ var prepareWithSegments = Pretext.prepareWithSegments;
            ' ' + round1(c.x0) + ',' + round1(c.y0 + LAKE_SOIL) + 'Z';
   }
 
+  function flatBand(x0, x1, y) {
+    if (x1 - x0 <= 0) return '';
+    return 'M' + round1(x0) + ',' + round1(y) + 'L' + round1(x1) + ',' + round1(y) +
+           'L' + round1(x1) + ',' + round1(y + LAKE_SOIL) +
+           'L' + round1(x0) + ',' + round1(y + LAKE_SOIL) + 'Z';
+  }
+
+  function blade(x, y, key, grass) {
+    var height = 6 + lakeRandom(key + 61) * 9;
+    var lean = (lakeRandom(key + 127) - 0.5) * height * 1.1;
+    grass.push('M' + round1(x) + ',' + round1(y) +
+      'Q' + round1(x + lean * 0.3) + ',' + round1(y - height * 0.62) +
+      ' ' + round1(x + lean) + ',' + round1(y - height));
+  }
+
+  // Grass along the flat run of shore, at the same density as the bank.
+  function plantFlat(x0, x1, y, key, grass) {
+    var span = x1 - x0;
+    var blades = Math.round(span / 6);
+    for (var i = 0; i < blades; i++) {
+      blade(x0 + span * (i + lakeRandom(key + i)) / blades, y, key + i, grass);
+    }
+  }
+
   // Grass over the whole bank, reeds gathered down at the waterline where a
   // few of them wade out into the shallows.
   function plantBank(c, bank, key, grass, stems, heads) {
     var toWater = c.x3 > c.x0 ? 1 : -1;
     var blades = Math.max(4, Math.round(bank / 6));
-    var i, t, baseX, baseY, height, lean;
+    var i, t, base, baseX, baseY, height, lean;
 
     for (i = 0; i < blades; i++) {
       t = Math.min(0.99, 0.05 + (i + lakeRandom(key + i)) / blades * 0.92);
-      baseX = curveAt(c, t, 'x');
-      baseY = curveAt(c, t, 'y');
-      height = 6 + lakeRandom(key + i + 61) * 9;
-      lean = (lakeRandom(key + i + 127) - 0.5) * height * 1.1;
-      grass.push('M' + round1(baseX) + ',' + round1(baseY) +
-        'Q' + round1(baseX + lean * 0.3) + ',' + round1(baseY - height * 0.62) +
-        ' ' + round1(baseX + lean) + ',' + round1(baseY - height));
+      base = curvePoint(c, t);
+      blade(base.x, base.y, key + i, grass);
     }
 
     var count = Math.max(2, Math.round(bank / 30));
     for (i = 0; i < count; i++) {
       t = Math.min(1, 0.6 + (i + lakeRandom(key + i + 17)) / count * 0.44);
-      baseX = curveAt(c, t, 'x');
-      baseY = curveAt(c, t, 'y');
+      base = curvePoint(c, t);
+      baseX = base.x;
+      baseY = base.y;
 
       // Past the water's edge the bank curve has nothing left to say, so a
       // wading reed is planted straight onto the surface instead.
@@ -764,59 +836,46 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   }
 
   function renderLake() {
-    var sw = stageW(), sh = stageH();
-    if (!lake || sw <= 0 || sh <= 0) return;
+    var g = lakeGeometry();
+    if (!lake || !g) return;
 
-    var waterL = box.offsetLeft;
-    var width = box.offsetWidth;
-    var waterR = waterL + width;
-    var waterY = box.offsetTop + content.offsetTop;   // the surface, as physics sees it
-    var bottomY = box.offsetTop + box.offsetHeight;
-
-    var floor = basinPoints(width, bottomY, basinRise(width, bottomY - waterY), 48);
-    for (var i = 0; i < floor.length; i++) floor[i].x += waterL;
-
-    var bank = clamp((sw - width) / 2, LAKE_MIN_BANK, LAKE_MAX_BANK);
-    var crestY = Math.max(0, waterY - LAKE_CREST);
-    var outerL = Math.max(0, waterL - bank);
-    var outerR = Math.min(sw, waterR + bank);
-    var left = shoreCurve(outerL, crestY, waterL, waterY);
-    var right = shoreCurve(outerR, crestY, waterR, waterY);
-
-    // One outline for all the earth: down the far bank, across the lake floor,
-    // up the near bank, then back around the outside.
+    // One outline for all the earth: in from the left edge, down the bank,
+    // across the bed, up the far bank and out to the right edge.
     var ground =
-      'M' + round1(outerL) + ',' + sh +
-      'L' + round1(outerL) + ',' + round1(crestY) + curveDown(left) +
-      lineThrough(floor) +
-      'L' + round1(waterR) + ',' + round1(waterY) + curveUp(right) +
-      'L' + round1(outerR) + ',' + sh + 'Z';
+      'M0,' + g.sh + 'L0,' + round1(g.crestY) + 'L' + round1(g.crestL) + ',' + round1(g.crestY) +
+      curveDown(g.left) + lineThrough(g.floor) +
+      'L' + round1(g.waterR) + ',' + round1(g.waterY) + curveUp(g.right) +
+      'L' + g.sw + ',' + round1(g.crestY) + 'L' + g.sw + ',' + g.sh + 'Z';
     lakeGround.setAttribute('d', ground);
     lakeGroundClip.setAttribute('d', ground);
 
-    // The water is that same floor, closed off along the surface.
+    // The water is that same bed, closed off along the surface.
     lakeWater.setAttribute('d',
-      'M' + round1(waterL) + ',' + round1(waterY) + lineThrough(floor) +
-      'L' + round1(waterR) + ',' + round1(waterY) + 'Z');
+      'M' + round1(g.waterL) + ',' + round1(g.waterY) + lineThrough(g.floor) +
+      'L' + round1(g.waterR) + ',' + round1(g.waterY) + 'Z');
 
     lakeSurface.setAttribute('d',
-      'M' + round1(waterL) + ',' + round1(waterY) +
-      'L' + round1(waterR) + ',' + round1(waterY));
+      'M' + round1(g.waterL) + ',' + round1(g.waterY) +
+      'L' + round1(g.waterR) + ',' + round1(g.waterY));
 
-    lakeShore.setAttribute('d', shoreBand(left) + shoreBand(right));
+    lakeShore.setAttribute('d',
+      flatBand(0, g.crestL, g.crestY) + shoreBand(g.left) +
+      shoreBand(g.right) + flatBand(g.crestR, g.sw, g.crestY));
 
-    var grit = soilGrit(outerL, outerR, crestY, sh);
+    var grit = soilGrit(0, g.sw, g.crestY, g.sh);
     lakeGrit.setAttribute('d', grit.speck);
     lakeStones.setAttribute('d', grit.stone);
 
     var grass = [], stems = [], heads = [];
-    plantBank(left, bank, 0, grass, stems, heads);
-    plantBank(right, bank, 128, grass, stems, heads);
+    plantFlat(0, g.crestL, g.crestY, 40, grass);
+    plantBank(g.left, g.bank, 0, grass, stems, heads);
+    plantBank(g.right, g.bank, 128, grass, stems, heads);
+    plantFlat(g.crestR, g.sw, g.crestY, 200, grass);
     lakeGrass.setAttribute('d', grass.join(''));
     lakeReedStems.setAttribute('d', stems.join(''));
     lakeReedHeads.setAttribute('d', heads.join(''));
 
-    lake.setAttribute('viewBox', '0 0 ' + sw + ' ' + sh);
+    lake.setAttribute('viewBox', '0 0 ' + g.sw + ' ' + g.sh);
   }
 
   /* ------------------------------------------------------------- fitting */
@@ -1532,44 +1591,41 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     });
   }
 
-  function addVesselBox(x, y, width, height) {
-    var body = physicsWorld.createBody({
-      type: 'static',
-      position: Physics.Vec2(x / PIXELS_PER_METER, y / PIXELS_PER_METER)
-    });
-    body.createFixture(
-      new Physics.Box(width / PIXELS_PER_METER / 2, height / PIXELS_PER_METER / 2),
-      { friction: 0.42, restitution: 0.04 }
-    );
-    vesselBodies.push(body);
-    vesselDebugShapes.push([
-      { x: x - width / 2, y: y - height / 2 }, { x: x + width / 2, y: y - height / 2 },
-      { x: x + width / 2, y: y + height / 2 }, { x: x - width / 2, y: y + height / 2 }
-    ]);
-  }
-
-  // One static body carrying a quad per floor segment. Planck builds its own
-  // convex hull per fixture, so the segments only have to be handed over in
-  // order; together they read as a single curved bed.
-  function addVesselFloor(points) {
+  // The ground is one static body carrying a quad per segment of the terrain
+  // line. Each quad is that segment extruded along its inward normal, so the
+  // surface objects rest on is exactly the surface that was drawn -- sloping
+  // banks included, where a stone dropped on the shore rolls down into the
+  // water instead of stopping against an invisible wall.
+  function addTerrainBody(points) {
     var body = physicsWorld.createBody({ type: 'static', position: Physics.Vec2(0, 0) });
+    var built = 0;
 
     for (var i = 0; i < points.length - 1; i++) {
       var a = points[i], b = points[i + 1];
-      var quad = [
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 0.5) continue;          // a flat quad would fail the hull
+
+      // Walking the line left to right, the ground lies to this side of it.
+      var nx = -dy / length * WALL_THICKNESS;
+      var ny = dx / length * WALL_THICKNESS;
+
+      body.createFixture(new Physics.Polygon([
         Physics.Vec2(a.x / PIXELS_PER_METER, a.y / PIXELS_PER_METER),
         Physics.Vec2(b.x / PIXELS_PER_METER, b.y / PIXELS_PER_METER),
-        Physics.Vec2(b.x / PIXELS_PER_METER, (b.y + WALL_THICKNESS) / PIXELS_PER_METER),
-        Physics.Vec2(a.x / PIXELS_PER_METER, (a.y + WALL_THICKNESS) / PIXELS_PER_METER)
-      ];
-      body.createFixture(new Physics.Polygon(quad), { friction: 0.42, restitution: 0.04 });
+        Physics.Vec2((b.x + nx) / PIXELS_PER_METER, (b.y + ny) / PIXELS_PER_METER),
+        Physics.Vec2((a.x + nx) / PIXELS_PER_METER, (a.y + ny) / PIXELS_PER_METER)
+      ]), { friction: 0.42, restitution: 0.04 });
+
       vesselDebugShapes.push([
         { x: a.x, y: a.y }, { x: b.x, y: b.y },
-        { x: b.x, y: b.y + WALL_THICKNESS }, { x: a.x, y: a.y + WALL_THICKNESS }
+        { x: b.x + nx, y: b.y + ny }, { x: a.x + nx, y: a.y + ny }
       ]);
+      built++;
     }
 
-    vesselBodies.push(body);
+    if (built) vesselBodies.push(body);
+    else physicsWorld.destroyBody(body);
   }
 
   function syncVesselBodies() {
@@ -1579,34 +1635,13 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     vesselBodies = [];
     vesselDebugShapes = [];
 
-    var rect = box.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
+    var g = lakeGeometry();
+    if (!g) {
       drawPhysicsDebug();
       return;
     }
 
-    // Two walls and a curved bed, open at the top. The bed is the same basin
-    // curve the lake is drawn from, so a stone rolls down the slope it looks
-    // like it is sitting on.
-    var wallHeight = rect.height + WALL_THICKNESS;
-    addVesselBox(
-      rect.left - WALL_THICKNESS / 2,
-      rect.top + wallHeight / 2,
-      WALL_THICKNESS,
-      wallHeight
-    );
-    addVesselBox(
-      rect.right + WALL_THICKNESS / 2,
-      rect.top + wallHeight / 2,
-      WALL_THICKNESS,
-      wallHeight
-    );
-
-    var floor = basinPoints(rect.width, rect.bottom,
-      basinRise(rect.width, rect.height - content.offsetTop), 24);
-    for (var f = 0; f < floor.length; f++) floor[f].x += rect.left;
-    addVesselFloor(floor);
-
+    addTerrainBody(terrainPoints(g));
     drawPhysicsDebug();
   }
 
