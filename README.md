@@ -62,6 +62,6 @@ Large language models have an incredible ability to stretch and squash language 
 
 2. **Interact**
 
-   - Resize the text box using the handles.
+   - Resize the text box by dragging any edge or corner, with a mouse or by touch.
    - The explanation updates to fit the new size.
    - The character count is displayed in the header.

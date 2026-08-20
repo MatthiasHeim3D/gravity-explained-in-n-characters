@@ -1,344 +1,752 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Gravity explained in n Characters</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        /* --- CSS remains the same --- */
-        body { margin: 0; padding: 20px; background-color: #f4f4f4; display: flex; flex-direction: column; align-items: center; min-height: 100vh; box-sizing: border-box; }
-        .heading { text-align: center; font-family: monospace; margin-top: 20px; margin-bottom: 10px; }
-        .sub-heading { text-align: center; font-family: monospace; color: #555; margin-bottom: 30px; }
-        #resizableBox { position: absolute; width: 300px; height: 200px; border: 1px solid #ccc; background-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-radius: 4px; box-sizing: border-box; padding: 15px; overflow: hidden; font-size: 16px; line-height: 1.4; }
-        #boxContent { width: 100%; height: 100%; text-align: justify; font-family: monospace; overflow: hidden; word-break: break-word; }
-        .resize-handle { position: absolute; background-color: #777; border: 1px solid #fff; border-radius: 3px; z-index: 10; transition: background-color 0.2s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-        .resize-handle:hover { background-color: #333; }
-        .resize-handle.corner { width: 12px; height: 12px; }
-        .resize-handle.tl { top: -7px; left: -7px; cursor: nwse-resize; }
-        .resize-handle.tr { top: -7px; right: -7px; cursor: nesw-resize; }
-        .resize-handle.bl { bottom: -7px; left: -7px; cursor: nesw-resize; }
-        .resize-handle.br { bottom: -7px; right: -7px; cursor: nwse-resize; }
-        .resize-handle.top, .resize-handle.bottom { width: 24px; height: 8px; left: 50%; transform: translateX(-50%); }
-        .resize-handle.left, .resize-handle.right { width: 8px; height: 24px; top: 50%; transform: translateY(-50%); }
-        .resize-handle.top { top: -5px; cursor: ns-resize; }
-        .resize-handle.bottom { bottom: -5px; cursor: ns-resize; }
-        .resize-handle.left { left: -5px; cursor: ew-resize; }
-        .resize-handle.right { right: -5px; cursor: ew-resize; }
-        #infoBar { position: fixed; bottom: 10px; left: 0; width: 100%; text-align: center; font-size: 12px; font-family: monospace; color: #555; z-index: 1000; }
-        #infoBar a { color: #007bff; text-decoration: none; vertical-align: middle; }
-        #infoBar a:hover { text-decoration: underline; }
-        #infoBar img { width: 16px; height: 16px; vertical-align: middle; margin: 0 3px 0 5px; }
-        @media (max-width: 768px) {
-            body { padding: 10px; }
-            #resizableBox { padding: 10px; }
-            .heading { font-size: 1.2em; }
-            .sub-heading { font-size: 0.9em; }
-            .resize-handle.corner { width: 20px; height: 20px; }
-            .resize-handle.tl { top: -11px; left: -11px; }
-            .resize-handle.tr { top: -11px; right: -11px; }
-            .resize-handle.bl { bottom: -11px; left: -11px; }
-            .resize-handle.br { bottom: -11px; right: -11px; }
-            .resize-handle.top, .resize-handle.bottom { width: 30px; height: 10px; }
-            .resize-handle.left, .resize-handle.right { width: 10px; height: 30px; }
-            .resize-handle.top { top: -6px; }
-            .resize-handle.bottom { bottom: -6px; }
-            .resize-handle.left { left: -6px; }
-            .resize-handle.right { right: -6px; }
-        }
+<meta charset="utf-8">
+<title>Gravity explained in n characters</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="An LLM experiment: gravity explained at whatever length fits inside a box you resize yourself.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2f1ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12110f" media="(prefers-color-scheme: dark)">
+<style>
+/* ---------------------------------------------------------------- tokens */
+:root {
+  color-scheme: light dark;
 
-        /* Style for the hidden measurement div */
-        #textMeasurementHelper {
-            position: absolute;
-            visibility: hidden;
-            height: auto;
-            width: auto;
-            top: -9999px;
-            left: -9999px;
-            /* Copy relevant styles from #boxContent */
-            font-family: monospace;
-            text-align: justify;
-            word-break: break-word;
-            /* Don't set padding here, adjust width calculation instead */
-        }
-    </style>
+  --bg:          #f2f1ef;
+  --bg-grid:     rgba(28, 25, 23, .045);
+  --paper:       #ffffff;
+  --ink:         #1b1a19;
+  --muted:       #6f6b66;
+  --line:        #ddd8d2;
+  --handle:      #8a837b;
+  --accent:      #5b5bd6;
+  --accent-ring: rgba(91, 91, 214, .22);
+  --shadow:      0 1px 2px rgba(28,25,23,.05), 0 10px 30px -12px rgba(28,25,23,.28);
+  --shadow-lift: 0 1px 2px rgba(28,25,23,.06), 0 18px 40px -14px rgba(28,25,23,.36);
+
+  --radius: 12px;
+
+  /* handles: hit target and visual are deliberately decoupled */
+  --corner-hit: 30px;
+  --edge-hit:   18px;
+  --bracket:    20px;
+  --stroke:     3px;
+  --pill:       36px;
+  --pill-t:     4px;
+
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:          #12110f;
+    --bg-grid:     rgba(245, 240, 235, .05);
+    --paper:       #1c1a18;
+    --ink:         #eceae7;
+    --muted:       #97918a;
+    --line:        #34302c;
+    --handle:      #7f7871;
+    --accent:      #8f8bff;
+    --accent-ring: rgba(143, 139, 255, .26);
+    --shadow:      0 1px 2px rgba(0,0,0,.5), 0 10px 30px -12px rgba(0,0,0,.7);
+    --shadow-lift: 0 1px 2px rgba(0,0,0,.55), 0 18px 40px -14px rgba(0,0,0,.8);
+  }
+}
+
+/* touch devices get fat, forgiving targets */
+@media (pointer: coarse) {
+  :root {
+    --corner-hit: 46px;
+    --edge-hit:   30px;
+    --bracket:    24px;
+    --stroke:     4px;
+    --pill:       40px;
+    --pill-t:     5px;
+  }
+}
+
+/* ---------------------------------------------------------------- layout */
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+}
+
+html.no-select, html.no-select * { user-select: none; -webkit-user-select: none; }
+
+/* ---------------------------------------------------------------- header */
+.masthead {
+  flex: none;
+  text-align: center;
+  padding-bottom: 14px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: clamp(1.05rem, 3.6vw, 1.6rem);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  line-height: 1.3;
+}
+
+#charCount {
+  display: inline-block;
+  min-width: 1.2em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  margin: 8px 0 0;
+  min-height: 1.35em;
+  font-size: clamp(.78rem, 2.4vw, .875rem);
+  color: var(--muted);
+}
+
+.hint.is-dims {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* ----------------------------------------------------------------- stage */
+#stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------- box */
+#box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 340px;
+  height: 220px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transition: opacity .35s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+#box.is-ready { opacity: 1; }
+
+#box.is-resizing {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lift), 0 0 0 3px var(--accent-ring);
+  transition: opacity .35s ease;
+}
+
+#boxContent {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.45;
+  text-align: justify;
+  hyphens: auto;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+@media (pointer: coarse) {
+  #box { padding: 14px; }
+  #boxContent { font-size: 14px; }
+}
+
+/* --------------------------------------------------------------- handles */
+.handle {
+  --c: var(--handle);
+  position: absolute;
+  z-index: 5;
+  touch-action: none;          /* stop the browser scrolling the page mid-drag */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.handle::before {
+  content: "";
+  position: absolute;
+  opacity: .85;
+  transition: width .18s ease, height .18s ease, background-color .15s ease,
+              border-color .15s ease, transform .15s ease, opacity .15s ease;
+}
+
+.handle:hover,
+.handle[data-active] { --c: var(--accent); }
+
+/* Edge handles: the whole edge is grabbable and a centred pill hints at it.
+   On hover or drag the pill stretches to the full edge to prove the point. */
+.handle.edge::before {
+  border-radius: 999px;
+  background: var(--c);
+}
+
+.handle.n, .handle.s {
+  left: calc(var(--corner-hit) / 2);
+  right: calc(var(--corner-hit) / 2);
+  height: var(--edge-hit);
+  cursor: ns-resize;
+}
+.handle.n { top: calc(var(--edge-hit) / -2); }
+.handle.s { bottom: calc(var(--edge-hit) / -2); }
+
+.handle.e, .handle.w {
+  top: calc(var(--corner-hit) / 2);
+  bottom: calc(var(--corner-hit) / 2);
+  width: var(--edge-hit);
+  cursor: ew-resize;
+}
+.handle.e { right: calc(var(--edge-hit) / -2); }
+.handle.w { left: calc(var(--edge-hit) / -2); }
+
+.handle.n::before, .handle.s::before {
+  left: 0; right: 0; margin: 0 auto;
+  top: calc(50% - var(--pill-t) / 2);
+  width: var(--pill);
+  height: var(--pill-t);
+}
+.handle.e::before, .handle.w::before {
+  top: 0; bottom: 0; margin: auto 0;
+  left: calc(50% - var(--pill-t) / 2);
+  width: var(--pill-t);
+  height: var(--pill);
+}
+
+.handle.n:hover::before, .handle.n[data-active]::before,
+.handle.s:hover::before, .handle.s[data-active]::before { width: 100%; }
+
+.handle.e:hover::before, .handle.e[data-active]::before,
+.handle.w:hover::before, .handle.w[data-active]::before { height: 100%; }
+
+/* Corner handles: an L-bracket whose stroke sits centred on the box edge, so
+   it reads as a thickened corner of the box rather than a floating dot. */
+.handle.corner { width: var(--corner-hit); height: var(--corner-hit); }
+
+.handle.corner::before {
+  width: var(--bracket);
+  height: var(--bracket);
+  border: var(--stroke) solid transparent;
+}
+
+.handle.corner:hover::before,
+.handle.corner[data-active]::before { transform: scale(1.18); }
+
+.handle.nw { top: calc(var(--corner-hit) / -2); left: calc(var(--corner-hit) / -2); cursor: nwse-resize; }
+.handle.ne { top: calc(var(--corner-hit) / -2); right: calc(var(--corner-hit) / -2); cursor: nesw-resize; }
+.handle.sw { bottom: calc(var(--corner-hit) / -2); left: calc(var(--corner-hit) / -2); cursor: nesw-resize; }
+.handle.se { bottom: calc(var(--corner-hit) / -2); right: calc(var(--corner-hit) / -2); cursor: nwse-resize; }
+
+.handle.nw::before {
+  top: calc(50% - var(--stroke) / 2); left: calc(50% - var(--stroke) / 2);
+  border-top-color: var(--c); border-left-color: var(--c);
+  border-radius: var(--radius) 0 0 0;
+  transform-origin: top left;
+}
+.handle.ne::before {
+  top: calc(50% - var(--stroke) / 2); right: calc(50% - var(--stroke) / 2);
+  border-top-color: var(--c); border-right-color: var(--c);
+  border-radius: 0 var(--radius) 0 0;
+  transform-origin: top right;
+}
+.handle.sw::before {
+  bottom: calc(50% - var(--stroke) / 2); left: calc(50% - var(--stroke) / 2);
+  border-bottom-color: var(--c); border-left-color: var(--c);
+  border-radius: 0 0 0 var(--radius);
+  transform-origin: bottom left;
+}
+.handle.se::before {
+  bottom: calc(50% - var(--stroke) / 2); right: calc(50% - var(--stroke) / 2);
+  border-bottom-color: var(--c); border-right-color: var(--c);
+  border-radius: 0 0 var(--radius) 0;
+  transform-origin: bottom right;
+}
+
+/* A gentle "you can grab me" pulse, only until the first interaction. */
+@keyframes handle-hint {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: 1; }
+}
+html:not(.has-interacted) .handle::before {
+  animation: handle-hint 2.4s ease-in-out 3;
+}
+#box:hover .handle::before,
+.handle:hover::before,
+.handle[data-active]::before { opacity: 1; }
+
+@media (pointer: coarse) {
+  .handle::before { opacity: .95; }
+}
+
+/* ---------------------------------------------------------------- footer */
+.colophon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 12px;
+  font-size: .75rem;
+  color: var(--muted);
+}
+
+.colophon a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 3px 6px;
+  transition: color .15s ease, background-color .15s ease;
+}
+.colophon a:hover { color: var(--ink); background: var(--accent-ring); }
+.colophon a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.colophon svg { width: 15px; height: 15px; fill: currentColor; }
+.colophon .sep { opacity: .45; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- the ruler */
+/* Off-screen twin of #boxContent, used to test what text fits. */
+#ruler {
+  position: absolute;
+  top: -99999px;
+  left: -99999px;
+  visibility: hidden;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  white-space: normal;
+  text-align: justify;
+  hyphens: auto;
+  word-break: break-word;
+  font-family: var(--mono);
+  contain: layout style;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+</style>
 </head>
 <body>
-    <h1 class="heading">Gravity explained in <span id="charCount">n</span> characters</h1>
-    <h4 class="sub-heading">Drag the edges or corners to resize the box.</h4>
 
-    <div id="resizableBox">
-        <div id="boxContent"></div>
-        <!-- Resize Handles -->
-        <div class="resize-handle top"></div>
-        <div class="resize-handle right"></div>
-        <div class="resize-handle bottom"></div>
-        <div class="resize-handle left"></div>
-        <div class="resize-handle corner tl"></div>
-        <div class="resize-handle corner tr"></div>
-        <div class="resize-handle corner bl"></div>
-        <div class="resize-handle corner br"></div>
-    </div>
+<header class="masthead">
+  <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
+  <p class="hint" id="hint">Drag any edge or corner to resize the box.</p>
+</header>
 
-    <!-- Hidden div for measurements -->
-    <div id="textMeasurementHelper"></div>
+<main id="stage">
+  <section id="box" aria-label="Resizable explanation box">
+    <p id="boxContent"></p>
 
-    <div id="infoBar">
-        <span>Matthias Heim 2024</span> |
-        <a href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank">
-            <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub">GitHub
-        </a>
-    </div>
+    <!-- Pointer-only targets, so they are decorative to assistive tech. -->
+    <div class="handle edge n"    data-dir="n"  aria-hidden="true"></div>
+    <div class="handle edge e"    data-dir="e"  aria-hidden="true"></div>
+    <div class="handle edge s"    data-dir="s"  aria-hidden="true"></div>
+    <div class="handle edge w"    data-dir="w"  aria-hidden="true"></div>
+    <div class="handle corner nw" data-dir="nw" aria-hidden="true"></div>
+    <div class="handle corner ne" data-dir="ne" aria-hidden="true"></div>
+    <div class="handle corner sw" data-dir="sw" aria-hidden="true"></div>
+    <div class="handle corner se" data-dir="se" aria-hidden="true"></div>
+  </section>
+</main>
 
-    
-    <script src="lookup_table.js"></script>
+<footer class="colophon">
+  <span>Matthias Heim 2024</span>
+  <span class="sep">/</span>
+  <a href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+    GitHub
+  </a>
+</footer>
 
-    <script>
-        // Dummy lookupTable for testing
-        if (typeof lookupTable === 'undefined') {
-            const lookupTable = {
-                1: "G", 5: "Mass.", 10: "Mass bends spacetime.", 25: "Mass/energy curve spacetime.",
-                50: "Objects follow shortest paths in curved spacetime created by mass/energy.",
-                100: "Gravity is the curvature of spacetime caused by mass and energy. Objects follow geodesics (shortest paths) in this curved spacetime.",
-                200: "General Relativity describes gravity not as a force, but as a consequence of the curvature of spacetime induced by the presence of mass and energy. Objects, including light, follow paths called geodesics through this curved spacetime.",
-            };
-            window.lookupTable = lookupTable;
-            console.warn("Using dummy lookupTable. Create lookup_table.js for actual content.");
+<p id="status" class="sr-only" role="status" aria-live="polite"></p>
+
+<div id="ruler" aria-hidden="true"></div>
+
+<script src="lookup_table.js"></script>
+<script>
+// Keep the page usable if lookup_table.js is missing.
+if (typeof window.lookupTable === 'undefined') {
+  window.lookupTable = {
+    1: "G",
+    5: "Force",
+    17: "Warped spacetime.",
+    50: "Objects follow the straightest paths they can find.",
+    140: "Gravity is not a force but geometry: mass and energy curve spacetime, and everything, light included, simply follows the curvature it finds."
+  };
+  console.warn('lookup_table.js not found - using a tiny placeholder table.');
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  var stage   = document.getElementById('stage');
+  var box     = document.getElementById('box');
+  var content = document.getElementById('boxContent');
+  var ruler   = document.getElementById('ruler');
+  var countEl = document.getElementById('charCount');
+  var hintEl  = document.getElementById('hint');
+  var statusEl = document.getElementById('status');
+  var handles = box.querySelectorAll('.handle');
+
+  var HINT_TEXT = hintEl.textContent;
+
+  // Flatten the lookup table once into parallel arrays sorted by budget.
+  var KEYS = Object.keys(window.lookupTable)
+    .map(Number)
+    .filter(function (n) { return isFinite(n); })
+    .sort(function (a, b) { return a - b; });
+  var TEXTS = KEYS.map(function (k) { return String(window.lookupTable[k]); });
+
+  var CURSORS = {
+    n: 'ns-resize',    s: 'ns-resize',    e: 'ew-resize',    w: 'ew-resize',
+    nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize'
+  };
+
+  var minW = 48, minH = 44;
+  var padX = 0, padY = 0;
+  var lastFit = -1;
+  var interacted = false;
+
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  /* ------------------------------------------------------------- metrics */
+
+  // Derive the smallest sensible box (one line, one character) from the live
+  // computed styles, and mirror the content typography onto the ruler.
+  function measure() {
+    var bs = getComputedStyle(box);
+    var cs = getComputedStyle(content);
+
+    padX = parseFloat(bs.paddingLeft) + parseFloat(bs.paddingRight);
+    padY = parseFloat(bs.paddingTop) + parseFloat(bs.paddingBottom);
+    var borderX = parseFloat(bs.borderLeftWidth) + parseFloat(bs.borderRightWidth);
+    var borderY = parseFloat(bs.borderTopWidth) + parseFloat(bs.borderBottomWidth);
+
+    var fontSize = parseFloat(cs.fontSize) || 15;
+    var lineHeight = parseFloat(cs.lineHeight);
+    if (!isFinite(lineHeight)) lineHeight = fontSize * 1.45;
+
+    minH = Math.ceil(lineHeight + padY + borderY);
+    minW = Math.ceil(fontSize * 0.65 + padX + borderX);
+
+    ruler.style.fontFamily    = cs.fontFamily;
+    ruler.style.fontSize      = cs.fontSize;
+    ruler.style.fontWeight    = cs.fontWeight;
+    ruler.style.lineHeight    = cs.lineHeight;
+    ruler.style.letterSpacing = cs.letterSpacing;
+    ruler.style.wordSpacing   = cs.wordSpacing;
+  }
+
+  /* ------------------------------------------------------------ geometry */
+
+  function stageW() { return stage.clientWidth; }
+  function stageH() { return stage.clientHeight; }
+
+  function geom() {
+    return { l: box.offsetLeft, t: box.offsetTop, w: box.offsetWidth, h: box.offsetHeight };
+  }
+
+  function setGeom(l, t, w, h) {
+    box.style.left   = Math.round(l) + 'px';
+    box.style.top    = Math.round(t) + 'px';
+    box.style.width  = Math.round(w) + 'px';
+    box.style.height = Math.round(h) + 'px';
+  }
+
+  // One resize model shared by pointer drags and keyboard nudges: the edge you
+  // grabbed moves, the opposite edge stays put, and the box stays in the stage.
+  function resizeFrom(dir, start, dx, dy) {
+    var l = start.l, t = start.t, w = start.w, h = start.h;
+    var sw = stageW(), sh = stageH();
+
+    if (dir.indexOf('e') !== -1) {
+      w = clamp(start.w + dx, minW, Math.max(minW, sw - start.l));
+    }
+    if (dir.indexOf('w') !== -1) {
+      var right = start.l + start.w;
+      w = clamp(start.w - dx, minW, Math.max(minW, right));
+      l = right - w;
+    }
+    if (dir.indexOf('s') !== -1) {
+      h = clamp(start.h + dy, minH, Math.max(minH, sh - start.t));
+    }
+    if (dir.indexOf('n') !== -1) {
+      var bottom = start.t + start.h;
+      h = clamp(start.h - dy, minH, Math.max(minH, bottom));
+      t = bottom - h;
+    }
+
+    setGeom(l, t, w, h);
+    return { l: l, t: t, w: w, h: h };
+  }
+
+  function centerBox() {
+    var sw = stageW(), sh = stageH();
+    var w = clamp(360, minW, Math.max(minW, sw - 24));
+    // Tall, narrow phone screens get a proportionally taller box; on a desktop
+    // stage the 240px floor wins and the default is unchanged.
+    var h = clamp(Math.max(240, sh * 0.42), minH, Math.max(minH, sh - 24));
+    setGeom((sw - w) / 2, (sh - h) / 2, w, h);
+  }
+
+  function clampIntoStage() {
+    var sw = stageW(), sh = stageH(), g = geom();
+    var w = clamp(g.w, minW, Math.max(minW, sw));
+    var h = clamp(g.h, minH, Math.max(minH, sh));
+    setGeom(clamp(g.l, 0, Math.max(0, sw - w)), clamp(g.t, 0, Math.max(0, sh - h)), w, h);
+  }
+
+  /* ------------------------------------------------------------- fitting */
+
+  function fits(i, cw, ch) {
+    ruler.textContent = TEXTS[i];
+    return ruler.scrollHeight <= ch + 0.5 && ruler.scrollWidth <= cw + 1;
+  }
+
+  // Largest index whose text still fits. Every probe forces a layout, so start
+  // from the previous answer and gallop outwards: during a drag the answer only
+  // moves a few entries, which measures at ~6 probes per frame against the ~12
+  // a cold binary search over 2200 entries costs.
+  function findBestFit(cw, ch, hint) {
+    var n = TEXTS.length;
+    if (!n) return -1;
+
+    var lo = 0, hi = n - 1, step, mid;
+
+    if (hint >= 0 && hint < n) {
+      if (fits(hint, cw, ch)) {
+        lo = hint;
+        step = 1;
+        while (hint + step < n && fits(hint + step, cw, ch)) {
+          lo = hint + step;
+          step *= 2;
         }
-    </script>
-    <script>
-        (function () {
-            const resizableBox = document.getElementById('resizableBox');
-            const boxContent = document.getElementById('boxContent');
-            const handles = resizableBox.querySelectorAll('.resize-handle');
-            const charCountSpan = document.getElementById('charCount');
-            const measurementHelper = document.getElementById('textMeasurementHelper'); // Get helper div
+        hi = Math.min(n - 1, hint + step);
+      } else {
+        hi = hint - 1;
+        step = 1;
+        while (hint - step >= 0 && !fits(hint - step, cw, ch)) {
+          hi = hint - step - 1;
+          step *= 2;
+        }
+        lo = Math.max(0, hint - step);
+      }
+    }
 
-            let isResizing = false;
-            let currentHandle;
-            let startX, startY, startWidth, startHeight, startLeft, startTop;
-            let animationFrameId = null;
+    var best = -1;
+    while (lo <= hi) {
+      mid = (lo + hi) >> 1;
+      if (fits(mid, cw, ch)) { best = mid; lo = mid + 1; }
+      else { hi = mid - 1; }
+    }
 
-            // --- Calculate realistic minimum dimensions ---
-            let calculatedMinHeight = 60; // Default fallback
-            let calculatedMinWidth = 40;  // Default fallback
-            function calculateMinDimensions() {
-                 const style = window.getComputedStyle(resizableBox);
-                 const contentStyle = window.getComputedStyle(boxContent);
-                 const fontSize = parseFloat(contentStyle.fontSize);
-                 const lineHeight = parseFloat(contentStyle.lineHeight);
-                 const paddingHeight = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-                 const paddingWidth = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    // The gallop assumes "fits" is monotonic in length. It very nearly is, but
+    // a lucky line break can break that; fall back to a full sweep if the
+    // windowed search came back empty from a window that did not start at 0.
+    if (best === -1 && lo > 0) {
+      lo = 0; hi = n - 1;
+      while (lo <= hi) {
+        mid = (lo + hi) >> 1;
+        if (fits(mid, cw, ch)) { best = mid; lo = mid + 1; }
+        else { hi = mid - 1; }
+      }
+    }
+    return best;
+  }
 
-                 // Min height = 1 line + vertical padding + small buffer
-                 calculatedMinHeight = Math.ceil(lineHeight + paddingHeight);
-                 // Min width = approx 1 char width + horizontal padding + buffer
-                 // Using 0.6 * fontSize as rough char width estimate
-                 calculatedMinWidth = Math.ceil((fontSize * 0.6) + paddingWidth + 5);
+  function render() {
+    var cw = box.clientWidth - padX;
+    var ch = box.clientHeight - padY;
+    var index = -1;
 
-                 // Also copy styles to measurement helper here
-                 measurementHelper.style.fontSize = contentStyle.fontSize;
-                 measurementHelper.style.lineHeight = contentStyle.lineHeight;
-                 // measurementHelper.style.fontFamily = contentStyle.fontFamily; // Already set in CSS
-                 // measurementHelper.style.wordBreak = contentStyle.wordBreak; // Already set in CSS
-            }
-            // Calculate after styles are loaded
-            window.addEventListener('load', calculateMinDimensions);
-            // Recalculate on resize end (if needed, e.g., for font-size media queries)
-            // window.addEventListener('resize', debounce(calculateMinDimensions, 200));
+    if (cw > 0 && ch > 0) {
+      ruler.style.width = cw + 'px';
+      index = findBestFit(cw, ch, lastFit);
+    }
+    lastFit = index;
 
+    var key = index >= 0 ? KEYS[index] : 0;
+    var text = index >= 0 ? TEXTS[index] : '';
 
-            function centerBox() {
-                requestAnimationFrame(() => {
-                    const windowWidth = window.innerWidth;
-                    const windowHeight = window.innerHeight;
-                    resizableBox.style.visibility = 'hidden'; resizableBox.style.display = 'block';
-                    const boxWidth = resizableBox.offsetWidth; const boxHeight = resizableBox.offsetHeight;
-                    resizableBox.style.display = ''; resizableBox.style.visibility = '';
+    if (countEl.textContent !== String(key)) countEl.textContent = key;
+    if (content.textContent !== text) content.textContent = text;
 
-                    const headerHeight = document.querySelector('.heading').offsetHeight + document.querySelector('.sub-heading').offsetHeight;
-                    const infoBarHeight = document.getElementById('infoBar').offsetHeight + 20;
-                    const availableHeight = windowHeight - headerHeight - infoBarHeight;
+    announce(key);
+  }
 
-                    let top = (availableHeight - boxHeight) / 2 + headerHeight;
-                    let left = (windowWidth - boxWidth) / 2;
+  // Announce only once the resize settles, so a drag is not read out frame
+  // by frame.
+  var announceTimer, announced = null;
+  function announce(key) {
+    if (key === announced) return;
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(function () {
+      announced = key;
+      statusEl.textContent = key
+        ? 'Gravity explained in ' + key + ' characters'
+        : 'Box too small to show any text';
+    }, 400);
+  }
 
-                    top = Math.max(headerHeight + 10, Math.min(top, windowHeight - boxHeight - infoBarHeight - 10));
-                    left = Math.max(10, Math.min(left, windowWidth - boxWidth - 10));
+  // The box's own size change is the single trigger for re-fitting, so drags,
+  // keyboard nudges and window clamps all funnel through one path.
+  var renderQueued = 0;
+  function queueRender() {
+    if (renderQueued) return;
+    renderQueued = requestAnimationFrame(function () {
+      renderQueued = 0;
+      render();
+    });
+  }
 
-                    resizableBox.style.left = left + 'px';
-                    resizableBox.style.top = top + 'px';
-                    estimateCharacters(); // Initial estimate
-                });
-            }
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(queueRender).observe(box);
+  }
 
-            function debounce(func, wait) {
-                let timeout;
-                return function executedFunction(...args) {
-                    const later = () => { clearTimeout(timeout); func(...args); };
-                    clearTimeout(timeout); timeout = setTimeout(later, wait);
-                };
-            }
+  /* ------------------------------------------------------------ dragging */
 
-            const debouncedCenterBox = debounce(centerBox, 150);
-            window.addEventListener('resize', debouncedCenterBox);
-            centerBox(); // Initial call
+  function showDims(g) {
+    hintEl.textContent = Math.round(g.w) + ' × ' + Math.round(g.h) + ' px';
+    hintEl.classList.add('is-dims');
+  }
 
-            handles.forEach(handle => {
-                handle.addEventListener('mousedown', startResize, { passive: false });
-                handle.addEventListener('touchstart', startResize, { passive: false });
-            });
+  function restoreHint() {
+    hintEl.textContent = HINT_TEXT;
+    hintEl.classList.remove('is-dims');
+  }
 
-            function startResize(e) {
-                e.preventDefault(); isResizing = true; currentHandle = e.target;
-                resizableBox.style.userSelect = 'none'; document.body.style.cursor = getComputedStyle(currentHandle).cursor;
+  function markInteracted() {
+    if (interacted) return;
+    interacted = true;
+    document.documentElement.classList.add('has-interacted');
+  }
 
-                const touch = e.type === 'touchstart' ? e.touches[0] : e;
-                startX = touch.clientX; startY = touch.clientY;
-                startWidth = resizableBox.offsetWidth; startHeight = resizableBox.offsetHeight;
-                startLeft = resizableBox.offsetLeft; startTop = resizableBox.offsetTop;
+  Array.prototype.forEach.call(handles, function (handle) {
+    var dir = handle.getAttribute('data-dir');
 
-                resizableBox.style.width = startWidth + 'px'; resizableBox.style.height = startHeight + 'px';
-                resizableBox.style.left = startLeft + 'px'; resizableBox.style.top = startTop + 'px';
-                resizableBox.style.right = 'auto'; resizableBox.style.bottom = 'auto';
+    handle.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      markInteracted();
 
-                // Ensure minimum dimensions are up-to-date before resize starts
-                calculateMinDimensions();
+      // Pointer capture keeps the drag alive past the box edge and past the
+      // window, and retargets every move/up to this element: no document-level
+      // listener juggling, and no touch lost to a fast flick.
+      try { handle.setPointerCapture(e.pointerId); } catch (err) {}
 
-                document.addEventListener('mousemove', handleMove, { passive: false });
-                document.addEventListener('touchmove', handleMove, { passive: false });
-                document.addEventListener('mouseup', stopResize);
-                document.addEventListener('touchend', stopResize);
-            }
+      var start = geom();
+      var sx = e.clientX, sy = e.clientY;
+      var frame = 0, latest = null;
 
-            function handleMove(e) {
-                if (!isResizing) return;
-                e.preventDefault();
-                if (animationFrameId) cancelAnimationFrame(animationFrameId);
-                animationFrameId = requestAnimationFrame(() => {
-                    performResize(e);
-                    estimateCharacters(); // Estimate on each frame
-                });
-            }
+      measure();
+      box.classList.add('is-resizing');
+      handle.setAttribute('data-active', '');
+      document.documentElement.classList.add('no-select');
+      document.body.style.cursor = CURSORS[dir] || '';
+      showDims(start);
 
-            function performResize(e) {
-                 const touch = e.type === 'touchmove' ? e.touches[0] : e;
-                 const clientX = touch.clientX; const clientY = touch.clientY;
-                 let dx = clientX - startX; let dy = clientY - startY;
-                 let newWidth = startWidth; let newHeight = startHeight;
-                 let newLeft = startLeft; let newTop = startTop;
+      function onMove(ev) {
+        latest = ev;
+        if (frame) return;
+        frame = requestAnimationFrame(function () {
+          frame = 0;
+          showDims(resizeFrom(dir, start, latest.clientX - sx, latest.clientY - sy));
+        });
+      }
 
-                 // Use calculated minimums
-                 const minWidth = calculatedMinWidth;
-                 const minHeight = calculatedMinHeight;
+      function onEnd() {
+        if (frame) { cancelAnimationFrame(frame); frame = 0; }
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onEnd);
+        handle.removeEventListener('pointercancel', onEnd);
+        box.classList.remove('is-resizing');
+        handle.removeAttribute('data-active');
+        document.documentElement.classList.remove('no-select');
+        document.body.style.cursor = '';
+        restoreHint();
+        try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
 
-                 if (currentHandle.classList.contains('right') || currentHandle.classList.contains('tr') || currentHandle.classList.contains('br')) {
-                    newWidth = Math.max(minWidth, startWidth + dx);
-                 }
-                 if (currentHandle.classList.contains('bottom') || currentHandle.classList.contains('bl') || currentHandle.classList.contains('br')) {
-                     newHeight = Math.max(minHeight, startHeight + dy);
-                 }
-                 if (currentHandle.classList.contains('left') || currentHandle.classList.contains('tl') || currentHandle.classList.contains('bl')) {
-                     const potentialWidth = startWidth - dx;
-                     if (potentialWidth >= minWidth) { newWidth = potentialWidth; newLeft = startLeft + dx; }
-                     else { dx = startWidth - minWidth; newWidth = minWidth; newLeft = startLeft + dx; }
-                 }
-                if (currentHandle.classList.contains('top') || currentHandle.classList.contains('tl') || currentHandle.classList.contains('tr')) {
-                     const potentialHeight = startHeight - dy;
-                     if (potentialHeight >= minHeight) { newHeight = potentialHeight; newTop = startTop + dy; }
-                     else { dy = startHeight - minHeight; newHeight = minHeight; newTop = startTop + dy; }
-                 }
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onEnd);
+      handle.addEventListener('pointercancel', onEnd);
+    });
+  });
 
-                 resizableBox.style.width = newWidth + 'px';
-                 resizableBox.style.height = newHeight + 'px';
-                 resizableBox.style.left = newLeft + 'px';
-                 resizableBox.style.top = newTop + 'px';
-            }
+  /* ---------------------------------------------------------------- boot */
 
-            function stopResize() {
-                if (!isResizing) return;
-                isResizing = false;
-                resizableBox.style.userSelect = ''; document.body.style.cursor = '';
-                if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+  function debounce(fn, wait) {
+    var timer;
+    return function () {
+      clearTimeout(timer);
+      timer = setTimeout(fn, wait);
+    };
+  }
 
-                document.removeEventListener('mousemove', handleMove);
-                document.removeEventListener('touchmove', handleMove);
-                document.removeEventListener('mouseup', stopResize);
-                document.removeEventListener('touchend', stopResize);
-                estimateCharacters(); // Final accurate estimation
-            }
+  window.addEventListener('resize', debounce(function () {
+    measure();
+    // An untouched box keeps re-centring, which is what you want on an
+    // orientation change. Once the reader has sized it, only pull it back
+    // into view so their choice survives the mobile URL bar sliding away.
+    if (interacted) clampIntoStage(); else centerBox();
+    queueRender();
+  }, 120));
 
-             function estimateCharacters() {
-                const style = window.getComputedStyle(resizableBox);
-                const paddingWidth = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-                const paddingHeight = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  measure();
+  centerBox();
+  render();
+  box.classList.add('is-ready');
 
-                // Calculate available content area dimensions
-                const contentWidth = resizableBox.clientWidth - paddingWidth;
-                const contentHeight = resizableBox.clientHeight - paddingHeight;
-
-                 // Ensure dimensions are positive before proceeding
-                 if (contentWidth <= 0 || contentHeight <= 0) {
-                    if (charCountSpan.textContent !== '0') charCountSpan.textContent = '0';
-                    if (boxContent.textContent !== '') boxContent.textContent = '';
-                    return;
-                 }
-
-                const previousText = boxContent.textContent;
-                const previousCount = charCountSpan.textContent;
-
-                const availableKeys = Object.keys(lookupTable).map(Number).sort((a, b) => a - b);
-                if (availableKeys.length === 0) {
-                    if (charCountSpan.textContent !== '0') charCountSpan.textContent = '0';
-                    if (boxContent.textContent !== 'lookupTable is empty.') boxContent.textContent = 'lookupTable is empty.';
-                    return;
-                }
-
-                let bestFitKey = 0;
-                let low = 0;
-                let high = availableKeys.length - 1;
-
-                 // --- Measurement using Helper Div ---
-                 measurementHelper.style.width = contentWidth + 'px'; // Set width constraint
-
-                while(low <= high) {
-                    let midIndex = Math.floor((low + high) / 2);
-                    let currentKey = availableKeys[midIndex];
-
-                    measurementHelper.textContent = lookupTable[currentKey]; // Use helper div
-                    // Check overflow using helper div's scroll dimensions
-                    const overflows = measurementHelper.scrollHeight > contentHeight || measurementHelper.scrollWidth > contentWidth;
-
-                    if (overflows) {
-                        high = midIndex - 1;
-                    } else {
-                        bestFitKey = currentKey;
-                        low = midIndex + 1;
-                    }
-                }
-
-                 // --- Post-Search Check for Smallest Item (using helper) ---
-                 if (bestFitKey === 0 && availableKeys.length > 0) {
-                     const smallestKey = availableKeys[0];
-                     measurementHelper.textContent = lookupTable[smallestKey];
-                     const smallestOverflows = measurementHelper.scrollHeight > contentHeight || measurementHelper.scrollWidth > contentWidth;
-                     if (!smallestOverflows) {
-                         bestFitKey = smallestKey;
-                     }
-                 }
-                 // --- Measurement Done ---
-
-
-                // --- Final DOM Update (only if changed) ---
-                const finalKey = bestFitKey;
-                const finalText = lookupTable[finalKey] || "";
-
-                if (String(finalKey) !== previousCount || finalText !== previousText) {
-                    charCountSpan.textContent = finalKey;
-                    boxContent.textContent = finalText; // Update the *actual* content div
-                }
-            }
-
-        })();
-    </script>
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { measure(); render(); });
+  }
+})();
+</script>
 
 </body>
 </html>
