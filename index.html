@@ -499,15 +499,20 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var APPLE_RADIUS = APPLE_SIZE / 2;
   var APPLE_WRAP_RADIUS = APPLE_RADIUS + 5;
   var APPLE_COLLISION_RADIUS = 19.5;
-  var GRAVITY = 1450;
-  var BUOYANCY = 2100;
-  var WATER_DRAG = 8;
-  var PHYSICS_SCALE = 50;
+  var EARTH_GRAVITY = 9.80665;       // m/s², standard gravity
+  var APPLE_MASS_KG = 0.18;          // a medium 180 g apple
+  var APPLE_RADIUS_METERS = 0.04;    // 8 cm physical diameter
+  var WATER_DENSITY = 1000;          // kg/m³ at ordinary conditions
+  var WATER_DRAG_COEFFICIENT = 0.47; // sphere approximation
+  var PIXELS_PER_METER = APPLE_COLLISION_RADIUS / APPLE_RADIUS_METERS;
+  var APPLE_VOLUME_M3 = 4 / 3 * Math.PI * Math.pow(APPLE_RADIUS_METERS, 3);
+  var APPLE_AREA_M2 = Math.PI * Math.pow(APPLE_RADIUS_METERS, 2);
+  var APPLE_FIXTURE_DENSITY = APPLE_MASS_KG / APPLE_AREA_M2;
   var PHYSICS_STEP = 1 / 120;
   var WALL_THICKNESS = 24;
 
   var physicsWorld = new Physics.World({
-    gravity: Physics.Vec2(0, GRAVITY / PHYSICS_SCALE)
+    gravity: Physics.Vec2(0, EARTH_GRAVITY)
   });
   physicsWorld.setAllowSleeping(true);
   physicsWorld.setContinuousPhysics(true);
@@ -910,7 +915,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       e.preventDefault();
       e.stopPropagation();
 
-      var target = Physics.Vec2(e.clientX / PHYSICS_SCALE, e.clientY / PHYSICS_SCALE);
+      var target = Physics.Vec2(e.clientX / PIXELS_PER_METER, e.clientY / PIXELS_PER_METER);
       var joint = new Physics.MouseJoint({
         maxForce: apple.body.getMass() * 300,
         frequencyHz: 7,
@@ -930,8 +935,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       if (!drag || drag.apple !== apple) return;
       e.preventDefault();
       drag.joint.setTarget(Physics.Vec2(
-        e.clientX / PHYSICS_SCALE,
-        e.clientY / PHYSICS_SCALE
+        e.clientX / PIXELS_PER_METER,
+        e.clientY / PIXELS_PER_METER
       ));
       apple.body.setAwake(true);
       ensureAppleFrame();
@@ -959,10 +964,10 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   function addVesselBox(x, y, width, height) {
     var body = physicsWorld.createBody({
       type: 'static',
-      position: Physics.Vec2(x / PHYSICS_SCALE, y / PHYSICS_SCALE)
+      position: Physics.Vec2(x / PIXELS_PER_METER, y / PIXELS_PER_METER)
     });
     body.createFixture(
-      new Physics.Box(width / PHYSICS_SCALE / 2, height / PHYSICS_SCALE / 2),
+      new Physics.Box(width / PIXELS_PER_METER / 2, height / PIXELS_PER_METER / 2),
       { friction: 0.42, restitution: 0.04 }
     );
     vesselBodies.push(body);
@@ -1012,20 +1017,33 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       if (!body.isAwake()) continue;
 
       var position = body.getPosition();
-      var x = position.x * PHYSICS_SCALE;
-      var y = position.y * PHYSICS_SCALE;
+      var x = position.x * PIXELS_PER_METER;
+      var y = position.y * PIXELS_PER_METER;
       var overWater = x > vessel.left && x < vessel.right;
-      var submerged = overWater
-        ? clamp((y + APPLE_RADIUS - water.top) / APPLE_SIZE, 0, 1)
+      var submergedDepth = overWater
+        ? clamp(
+            position.y + APPLE_RADIUS_METERS - water.top / PIXELS_PER_METER,
+            0,
+            APPLE_RADIUS_METERS * 2
+          )
         : 0;
+      // Exact volume fraction of a submerged spherical cap.
+      var submerged = Math.pow(submergedDepth, 2) *
+        (3 * APPLE_RADIUS_METERS - submergedDepth) /
+        (4 * Math.pow(APPLE_RADIUS_METERS, 3));
 
       if (submerged > 0 && y - APPLE_RADIUS < vessel.bottom) {
         var velocity = body.getLinearVelocity();
-        var mass = body.getMass();
+        var speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+        var buoyancyForce = WATER_DENSITY * EARTH_GRAVITY *
+          APPLE_VOLUME_M3 * submerged;
+        var dragForce = speed > 0
+          ? 0.5 * WATER_DENSITY * WATER_DRAG_COEFFICIENT *
+            APPLE_AREA_M2 * speed * speed * submerged
+          : 0;
         body.applyForceToCenter(Physics.Vec2(
-          -mass * velocity.x * WATER_DRAG * submerged,
-          mass * (-BUOYANCY / PHYSICS_SCALE * submerged -
-            velocity.y * WATER_DRAG * submerged)
+          speed > 0 ? -dragForce * velocity.x / speed : 0,
+          -buoyancyForce + (speed > 0 ? -dragForce * velocity.y / speed : 0)
         ), false);
         body.setAngularDamping(0.04 + submerged * 3);
       } else {
@@ -1070,8 +1088,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     for (var i = apples.length - 1; i >= 0; i--) {
       var apple = apples[i];
       var position = apple.body.getPosition();
-      apple.x = position.x * PHYSICS_SCALE;
-      apple.y = position.y * PHYSICS_SCALE;
+      apple.x = position.x * PIXELS_PER_METER;
+      apple.y = position.y * PIXELS_PER_METER;
       apple.angle = apple.body.getAngle() * 180 / Math.PI;
       checkForSplash(apple, water, vessel, now);
       positionApple(apple);
@@ -1104,14 +1122,14 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var y = -APPLE_RADIUS - 4 - Math.random() * 18;
     var angle = (-18 + Math.random() * 36) * Math.PI / 180;
     var body = physicsWorld.createDynamicBody({
-      position: Physics.Vec2(x / PHYSICS_SCALE, y / PHYSICS_SCALE),
+      position: Physics.Vec2(x / PIXELS_PER_METER, y / PIXELS_PER_METER),
       angle: angle,
       bullet: true,
       linearDamping: 0.001,
       angularDamping: 0.04
     });
-    body.createFixture(new Physics.Circle(APPLE_COLLISION_RADIUS / PHYSICS_SCALE), {
-      density: 1,
+    body.createFixture(new Physics.Circle(APPLE_RADIUS_METERS), {
+      density: APPLE_FIXTURE_DENSITY,
       friction: 0.38,
       restitution: 0.14
     });
