@@ -2,10 +2,12 @@
   "name": "gravity-explained-in-n-characters",
   "private": true,
   "scripts": {
+    "build:physics": "esbuild ./scripts/physics-entry.js --bundle --format=iife --global-name=Physics --minify --outfile=vendor/physics.js",
     "build:pretext": "esbuild ./scripts/pretext-entry.js --bundle --format=iife --global-name=Pretext --minify --outfile=vendor/pretext.js"
   },
   "dependencies": {
-    "@chenglou/pretext": "0.0.8"
+    "@chenglou/pretext": "0.0.8",
+    "planck": "1.5.0"
   },
   "devDependencies": {
     "esbuild": "0.25.9"

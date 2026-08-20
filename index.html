@@ -421,6 +421,7 @@ if (typeof window.lookupTable === 'undefined') {
 }
 </script>
 
+<script src="vendor/physics.js"></script>
 <script src="vendor/pretext.js"></script>
 <script>
 var layoutText = Pretext.layout;
@@ -470,9 +471,20 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var APPLE_SIZE = 44;
   var APPLE_RADIUS = APPLE_SIZE / 2;
   var APPLE_WRAP_RADIUS = APPLE_RADIUS + 5;
+  var APPLE_COLLISION_RADIUS = 19.5;
   var GRAVITY = 1450;
   var BUOYANCY = 4200;
   var WATER_DRAG = 8;
+  var PHYSICS_SCALE = 50;
+  var PHYSICS_STEP = 1 / 120;
+  var WALL_THICKNESS = 24;
+
+  var physicsWorld = new Physics.World({
+    gravity: Physics.Vec2(0, GRAVITY / PHYSICS_SCALE)
+  });
+  physicsWorld.setAllowSleeping(true);
+  physicsWorld.setContinuousPhysics(true);
+  var vesselBodies = [];
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -534,6 +546,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     box.style.top    = '';
     box.style.width  = Math.round(w) + 'px';
     box.style.height = Math.round(h) + 'px';
+    syncVesselBodies();
     wakeApples();
   }
 
@@ -833,65 +846,115 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   var appleFrame = 0;
   var lastAppleTime = 0;
+  var physicsAccumulator = 0;
+
+  function addVesselBox(x, y, width, height) {
+    var body = physicsWorld.createBody({
+      type: 'static',
+      position: Physics.Vec2(x / PHYSICS_SCALE, y / PHYSICS_SCALE)
+    });
+    body.createFixture(
+      new Physics.Box(width / PHYSICS_SCALE / 2, height / PHYSICS_SCALE / 2),
+      { friction: 0.42, restitution: 0.04 }
+    );
+    vesselBodies.push(body);
+  }
+
+  function syncVesselBodies() {
+    for (var i = 0; i < vesselBodies.length; i++) {
+      physicsWorld.destroyBody(vesselBodies[i]);
+    }
+    vesselBodies = [];
+
+    var rect = box.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    // These three rigid bodies form a U: the top is genuinely open. Walls sit
+    // outside the visible glass, so their inner faces match its exact edges.
+    var wallHeight = rect.height + WALL_THICKNESS;
+    addVesselBox(
+      rect.left - WALL_THICKNESS / 2,
+      rect.top + wallHeight / 2,
+      WALL_THICKNESS,
+      wallHeight
+    );
+    addVesselBox(
+      rect.right + WALL_THICKNESS / 2,
+      rect.top + wallHeight / 2,
+      WALL_THICKNESS,
+      wallHeight
+    );
+    addVesselBox(
+      rect.left + rect.width / 2,
+      rect.bottom + WALL_THICKNESS / 2,
+      rect.width,
+      WALL_THICKNESS
+    );
+  }
 
   function wakeApples() {
     if (!apples.length) return;
-    for (var i = 0; i < apples.length; i++) apples[i].sleeping = false;
+    for (var i = 0; i < apples.length; i++) apples[i].body.setAwake(true);
     if (!appleFrame) {
       lastAppleTime = 0;
+      physicsAccumulator = 0;
       appleFrame = requestAnimationFrame(animateApples);
     }
   }
 
+  function applyWaterForces(water, vessel) {
+    for (var i = 0; i < apples.length; i++) {
+      var body = apples[i].body;
+      if (!body.isAwake()) continue;
+
+      var position = body.getPosition();
+      var x = position.x * PHYSICS_SCALE;
+      var y = position.y * PHYSICS_SCALE;
+      var overWater = x > vessel.left && x < vessel.right;
+      var submerged = overWater
+        ? clamp((y + APPLE_RADIUS - water.top) / APPLE_SIZE, 0, 1)
+        : 0;
+
+      if (submerged > 0 && y - APPLE_RADIUS < vessel.bottom) {
+        var velocity = body.getLinearVelocity();
+        var mass = body.getMass();
+        body.applyForceToCenter(Physics.Vec2(
+          -mass * velocity.x * WATER_DRAG * submerged,
+          mass * (-BUOYANCY / PHYSICS_SCALE * submerged -
+            velocity.y * WATER_DRAG * submerged)
+        ), false);
+        body.setAngularDamping(0.04 + submerged * 3);
+      } else {
+        body.setAngularDamping(0.04);
+      }
+    }
+  }
+
   function animateApples(now) {
-    var dt = lastAppleTime ? Math.min((now - lastAppleTime) / 1000, 0.025) : 0;
+    var dt = lastAppleTime ? Math.min((now - lastAppleTime) / 1000, 0.05) : 0;
     lastAppleTime = now;
     var water = content.getBoundingClientRect();
-    var moving = false;
+    var vessel = box.getBoundingClientRect();
+    physicsAccumulator = Math.min(physicsAccumulator + dt, 0.1);
+
+    while (physicsAccumulator >= PHYSICS_STEP) {
+      applyWaterForces(water, vessel);
+      physicsWorld.step(PHYSICS_STEP, 10, 6);
+      physicsAccumulator -= PHYSICS_STEP;
+    }
 
     for (var i = apples.length - 1; i >= 0; i--) {
       var apple = apples[i];
-      if (apple.sleeping) continue;
-      moving = true;
-
-      var overWater = apple.x > water.left && apple.x < water.right;
-      var submerged = overWater
-        ? clamp((apple.y + APPLE_RADIUS - water.top) / APPLE_SIZE, 0, 1)
-        : 0;
-      var acceleration = GRAVITY;
-
-      if (submerged > 0 && apple.y - APPLE_RADIUS < water.bottom) {
-        // Archimedes in miniature: displaced water pushes upward, while drag
-        // opposes the current motion. Both forces ramp up smoothly as the apple
-        // crosses the surface, producing a plunge and a damped rebound.
-        acceleration -= BUOYANCY * submerged;
-        acceleration -= apple.velocity * WATER_DRAG * submerged;
-        apple.spin *= Math.exp(-3 * submerged * dt);
-      }
-
-      apple.velocity += acceleration * dt;
-      apple.y += apple.velocity * dt;
-      apple.angle += apple.spin * dt;
-
-      if (overWater && apple.y + APPLE_RADIUS > water.bottom) {
-        apple.y = water.bottom - APPLE_RADIUS;
-        if (apple.velocity > 0) apple.velocity *= -0.18;
-      }
-
-      var restingY = water.top - APPLE_RADIUS +
-        APPLE_SIZE * (GRAVITY / BUOYANCY);
-      if (overWater && submerged > 0 &&
-          Math.abs(apple.y - restingY) < 0.35 &&
-          Math.abs(apple.velocity) < 3) {
-        apple.y = restingY;
-        apple.velocity = 0;
-        apple.spin = 0;
-        apple.sleeping = true;
-      }
-
+      var position = apple.body.getPosition();
+      apple.x = position.x * PHYSICS_SCALE;
+      apple.y = position.y * PHYSICS_SCALE;
+      apple.angle = apple.body.getAngle() * 180 / Math.PI;
       positionApple(apple);
 
-      if (apple.y - APPLE_RADIUS > window.innerHeight + APPLE_SIZE) {
+      // Spilled apples have no floor outside the vessel. Once their top has
+      // crossed the viewport floor they are gone, both visually and physically.
+      if (apple.y - APPLE_RADIUS > window.innerHeight) {
+        physicsWorld.destroyBody(apple.body);
         apple.el.remove();
         apples.splice(i, 1);
       }
@@ -901,7 +964,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     // the selected character budget are recomputed in the same animation frame.
     render();
 
-    if (moving && apples.some(function (apple) { return !apple.sleeping; })) {
+    if (apples.some(function (apple) { return apple.body.isAwake(); })) {
       appleFrame = requestAnimationFrame(animateApples);
     } else {
       appleFrame = 0;
@@ -915,14 +978,27 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var maxX = rect.right - APPLE_RADIUS;
     var x = maxX > minX ? minX + Math.random() * (maxX - minX) : rect.left + rect.width / 2;
     var el = document.createElement('span');
+    var y = -APPLE_RADIUS - 4 - Math.random() * 18;
+    var angle = (-18 + Math.random() * 36) * Math.PI / 180;
+    var body = physicsWorld.createDynamicBody({
+      position: Physics.Vec2(x / PHYSICS_SCALE, y / PHYSICS_SCALE),
+      angle: angle,
+      bullet: true,
+      linearDamping: 0.001,
+      angularDamping: 0.04
+    });
+    body.createFixture(new Physics.Circle(APPLE_COLLISION_RADIUS / PHYSICS_SCALE), {
+      density: 1,
+      friction: 0.38,
+      restitution: 0.14
+    });
+    body.setAngularVelocity((-80 + Math.random() * 160) * Math.PI / 180);
     var apple = {
       el: el,
+      body: body,
       x: x,
-      y: -APPLE_RADIUS - 4 - Math.random() * 18,
-      velocity: 0,
-      angle: -18 + Math.random() * 36,
-      spin: -80 + Math.random() * 160,
-      sleeping: false
+      y: y,
+      angle: angle * 180 / Math.PI
     };
 
     el.className = 'apple';
