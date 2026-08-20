@@ -256,7 +256,12 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
 
 .apple.is-dragging { cursor: grabbing; }
 
+/* A splash is a flipbook of character grids, not a moving object. The
+   transform only parks the grid: its centre column on the impact point, its
+   last row on the water line. Everything that looks like motion is a glyph
+   appearing in a different cell one frame later. */
 .ascii-splash {
+  --splash-row: 9px;   /* one row of the character grid */
   position: fixed;
   z-index: 9;
   margin: 0;
@@ -265,18 +270,12 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 600;
-  line-height: .78;
-  text-align: center;
+  line-height: var(--splash-row);
   white-space: pre;
   text-shadow: 0 1px 5px var(--water);
-  transform-origin: center bottom;
-  animation: ascii-splash .7s ease-out forwards;
-}
-
-@keyframes ascii-splash {
-  0%   { opacity: 0; transform: translate(-50%, -45%) scale(.35); }
-  18%  { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -105%) scale(1.35); }
+  /* Lift the grid by its 8 rows, give back half a row to centre the water-line
+     row on the anchor, then 1.5px more because a tilde draws above that centre. */
+  transform: translate(-50%, calc(-7.5 * var(--splash-row) + 1.5px));
 }
 
 @media (pointer: coarse) {
@@ -878,15 +877,136 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       apple.angle.toFixed(1) + 'deg)';
   }
 
-  function splashAt(x, y) {
+  // ------------------------------------------------------------ splash art
+  // A splash is a flipbook drawn on a fixed 17x8 character grid: bottom row is
+  // the water line, centre column is the point of impact. No glyph is ever
+  // moved -- a droplet appears to fly because the next frame draws it one cell
+  // further out. Frames are written bottom up and stored without their empty
+  // top rows; splashFrame pads them back so every frame is the same height.
+  var SPLASH_ROWS = 8;            // .ascii-splash anchors on this row count
+  var SPLASH_FRAME_MS = 52;       // a hair under two display frames each
+  var SPLASH_CROWN_SPEED = 2.2;   // m/s; below this an apple only plops
+
+  function splashFrame(rows) {
+    var lead = SPLASH_ROWS - rows.length;
+    return (lead > 0 ? new Array(lead + 1).join('\n') : '') + rows.join('\n');
+  }
+
+  // Fast entry: the surface punctures, a crown climbs and throws off droplets,
+  // the jet collapses, and the droplets arc back down into spreading rings.
+  var SPLASH_CROWN = [
+    ['~~~~~~~-v-~~~~~~~'],
+    ['       .:.',
+     '~~~~~~~\\_/~~~~~~~'],
+    ['        .',
+     '     \\  |  /',
+     '~~~~~~\\_|_/~~~~~~'],
+    ['        .',
+     '        \'',
+     '    o   |   o',
+     '    \\   |   /',
+     '~~~~~\\__|__/~~~~~'],
+    ['        .',
+     '        \'',
+     '  o  .  |  .  o',
+     '        |',
+     '   \\    |    /',
+     '    \\   |   /',
+     '~~~~~\\__|__/~~~~~'],
+    [' o  .       .  o',
+     '',
+     '        .',
+     '',
+     '',
+     '     \\  \'  /',
+     '~~~-~~\\___/~~-~~~'],
+    ['o   .       .   o',
+     '',
+     '',
+     '        .',
+     '       ._.',
+     '~~~~-~~~~~~~-~~~~'],
+    ['o   .       .   o',
+     '',
+     '',
+     '~~~-~~~~v~~~~-~~~'],
+    ['    .       .',
+     'v~-~~~~~~~~~~~-~v'],
+    ['~-~~v~~~~~~~v~~-~'],
+    ['-~~~-~~~~~~~-~~~-']
+  ].map(splashFrame);
+
+  // Slow entry: a stub of a crown, two droplets, and the rings.
+  var SPLASH_PLOP = [
+    ['~~~~~~~~v~~~~~~~~'],
+    ['       . .',
+     '~~~~~~~\\_/~~~~~~~'],
+    ['     .     .',
+     '      \\ | /',
+     '~~~~~~~\\_/~~~~~~~'],
+    ['    o       o',
+     '',
+     '',
+     '       ._.',
+     '~~~~~-~~~~~-~~~~~'],
+    ['   .         .',
+     '',
+     '~~~-~~~~~~~~~-~~~'],
+    ['~-~v~~~~~~~~~v~-~'],
+    ['-~~~~~~~~~~~~~~~-']
+  ].map(splashFrame);
+
+  var reducedMotion = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+
+  var liveSplashes = [];
+  var splashFrameId = 0;
+
+  function splashAt(x, y, speed) {
+    var frames = speed >= SPLASH_CROWN_SPEED ? SPLASH_CROWN : SPLASH_PLOP;
     var splash = document.createElement('pre');
     splash.className = 'ascii-splash';
     splash.setAttribute('aria-hidden', 'true');
     splash.style.left = Math.round(x) + 'px';
     splash.style.top = Math.round(y) + 'px';
-    splash.textContent = '  \\  |  /\n.  \\ | /  .\n~~~  *  ~~~';
+    splash.textContent = frames[0];
     document.body.appendChild(splash);
-    splash.addEventListener('animationend', function () { splash.remove(); }, { once: true });
+
+    // Reduced motion gets the aftermath rather than the flipbook.
+    if (reducedMotion && reducedMotion.matches) {
+      splash.textContent = frames[frames.length - 1];
+      window.setTimeout(function () { splash.remove(); }, 300);
+      return;
+    }
+
+    liveSplashes.push({ el: splash, frames: frames, index: 0, start: 0 });
+    if (!splashFrameId) splashFrameId = requestAnimationFrame(animateSplashes);
+  }
+
+  // One ticker drives every splash on screen; it runs independently of the
+  // apple loop so a ripple still plays out after the apples have gone to sleep.
+  function animateSplashes(now) {
+    for (var i = liveSplashes.length - 1; i >= 0; i--) {
+      var splash = liveSplashes[i];
+      if (!splash.start) splash.start = now;
+
+      var index = Math.floor((now - splash.start) / SPLASH_FRAME_MS);
+      if (index >= splash.frames.length) {
+        splash.el.remove();
+        liveSplashes.splice(i, 1);
+        continue;
+      }
+      if (index === splash.index) continue;
+
+      splash.index = index;
+      splash.el.textContent = splash.frames[index];
+
+      // The tail frames dim, so the last rings settle instead of blinking out.
+      var remaining = splash.frames.length - index;
+      splash.el.style.opacity = remaining < 4 ? remaining / 4 : '';
+    }
+    splashFrameId = liveSplashes.length ? requestAnimationFrame(animateSplashes) : 0;
   }
 
   var appleFrame = 0;
@@ -1061,7 +1181,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     if (touchesWater && !apple.inWater) {
       var downwardSpeed = apple.body.getLinearVelocity().y;
       if (downwardSpeed > 0.8 && now - apple.lastSplash > 450) {
-        splashAt(clamp(apple.x, vessel.left, vessel.right), water.top);
+        splashAt(clamp(apple.x, vessel.left, vessel.right), water.top, downwardSpeed);
         apple.lastSplash = now;
       }
       apple.inWater = true;
