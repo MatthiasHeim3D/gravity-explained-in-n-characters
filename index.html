@@ -879,7 +879,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   // splashFrame pads them back so every frame is the same height.
   var SPLASH_ROWS = 8;            // .ascii-splash anchors on this row count
   var SPLASH_COLS = 17;
-  var SPLASH_FRAME_MS = 52;       // a hair under two display frames each
+  var SPLASH_CROWN_MS = 52;       // a hair over three display frames each
+  var SPLASH_PLOP_MS = 72;        // slower water: a soft entry lingers on each
   var SPLASH_CROWN_SPEED = 2.2;   // m/s; below this an apple only plops
   var SPLASH_DEPTH = ' ~-.,:vo';  // weakest to strongest; anything else is structure
 
@@ -1025,8 +1026,10 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   function splashAt(x, speed) {
     ensureSplashLayer();
+    var heavy = speed >= SPLASH_CROWN_SPEED;
     liveSplashes.push({
-      frames: speed >= SPLASH_CROWN_SPEED ? SPLASH_CROWN : SPLASH_PLOP,
+      frames: heavy ? SPLASH_CROWN : SPLASH_PLOP,
+      step: heavy ? SPLASH_CROWN_MS : SPLASH_PLOP_MS,
       col: Math.round(x / splashCell - 0.5) - (SPLASH_COLS - 1) / 2,
       index: 0,
       start: null   // set on the first tick that actually draws it
@@ -1042,7 +1045,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     for (var i = liveSplashes.length - 1; i >= 0; i--) {
       var splash = liveSplashes[i];
       if (splash.start === null) splash.start = now;
-      splash.index = Math.floor((now - splash.start) / SPLASH_FRAME_MS);
+      splash.index = Math.floor((now - splash.start) / splash.step);
       if (splash.index >= splash.frames.length) liveSplashes.splice(i, 1);
     }
 
