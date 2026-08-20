@@ -1,1 +1,1 @@
-export { Box, MouseJoint, Polygon, Vec2, World } from 'planck';
+export { Box, MouseJoint, Polygon, Settings, Vec2, World } from 'planck';

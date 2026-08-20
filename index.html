@@ -519,6 +519,11 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var WATER_LINEAR_DAMPING = 2.5;
   var WATER_ANGULAR_DAMPING = 1.2;
   var PIXELS_PER_METER = APPLE_COLLISION_RADIUS / APPLE_RADIUS_METERS;
+  // Planck's 5 mm default tolerance is intended for roughly metre-sized
+  // bodies. Here it creates a 4.875 px skin around every small hull. A 0.1 mm
+  // tolerance keeps continuous contacts robust while reducing that skin to
+  // less than one tenth of a pixel per collider.
+  var PHYSICS_LINEAR_SLOP = 0.0001;
   var PHYSICS_STEP = 1 / 120;
   var WALL_THICKNESS = 24;
 
@@ -542,6 +547,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       hull: [[19,46], [59,12], [84,8], [112,52], [117,98], [74,122], [24,114], [6,85]]
     }
   };
+
+  Physics.Settings.linearSlop = PHYSICS_LINEAR_SLOP;
 
   var physicsWorld = new Physics.World({
     gravity: Physics.Vec2(0, EARTH_GRAVITY)
