@@ -1,3 +1,4 @@
 \.conda
+node_modules/
 
 api_key.txt

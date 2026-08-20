@@ -172,8 +172,9 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   font-size: 15px;
   line-height: 1.45;
   text-align: justify;
-  hyphens: auto;
-  word-break: break-word;
+  hyphens: none;
+  word-break: normal;
+  overflow-wrap: break-word;
   overflow: hidden;
 }
 
@@ -341,25 +342,6 @@ html:not(.has-interacted) .handle::before {
   white-space: nowrap;
 }
 
-/* ------------------------------------------------------------- the ruler */
-/* Off-screen twin of #boxContent, used to test what text fits. */
-#ruler {
-  position: absolute;
-  top: -99999px;
-  left: -99999px;
-  visibility: hidden;
-  width: auto;
-  height: auto;
-  padding: 0;
-  border: 0;
-  white-space: normal;
-  text-align: justify;
-  hyphens: auto;
-  word-break: break-word;
-  font-family: var(--mono);
-  contain: layout style;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .001ms !important;
@@ -403,8 +385,6 @@ html:not(.has-interacted) .handle::before {
 
 <p id="status" class="sr-only" role="status" aria-live="polite"></p>
 
-<div id="ruler" aria-hidden="true"></div>
-
 <script src="lookup_table.js"></script>
 <script>
 // Keep the page usable if lookup_table.js is missing.
@@ -420,14 +400,19 @@ if (typeof window.lookupTable === 'undefined') {
 }
 </script>
 
+<script src="vendor/pretext.js"></script>
 <script>
+var layoutText = Pretext.layout;
+var measureNaturalWidth = Pretext.measureNaturalWidth;
+var prepare = Pretext.prepare;
+var prepareWithSegments = Pretext.prepareWithSegments;
+
 (function () {
   'use strict';
 
   var stage   = document.getElementById('stage');
   var box     = document.getElementById('box');
   var content = document.getElementById('boxContent');
-  var ruler   = document.getElementById('ruler');
   var countEl = document.getElementById('charCount');
   var hintEl  = document.getElementById('hint');
   var statusEl = document.getElementById('status');
@@ -441,6 +426,12 @@ if (typeof window.lookupTable === 'undefined') {
     .filter(function (n) { return isFinite(n); })
     .sort(function (a, b) { return a - b; });
   var TEXTS = KEYS.map(function (k) { return String(window.lookupTable[k]); });
+  // Pretext follows white-space: normal, so repeated whitespace is one cell.
+  // Keeping these lengths lets us discard entries that cannot possibly fit
+  // before doing any text layout work.
+  var NORMALIZED_LENGTHS = TEXTS.map(function (text) {
+    return text.trim().replace(/\s+/g, ' ').length;
+  });
 
   var CURSORS = {
     n: 'ns-resize',    s: 'ns-resize',    e: 'ew-resize',    w: 'ew-resize',
@@ -449,15 +440,27 @@ if (typeof window.lookupTable === 'undefined') {
 
   var minW = 48, minH = 44;
   var padX = 0, padY = 0;
-  var lastFit = -1;
   var interacted = false;
+  var lineHeight = 21.75;
+  var cellWidth = 9;
+  var pretextFont = '';
+  var pretextOptions = { letterSpacing: 0 };
+  var preparedTexts = new Array(TEXTS.length);
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
   /* ------------------------------------------------------------- metrics */
 
-  // Derive the smallest sensible box (one line, one character) from the live
-  // computed styles, and mirror the content typography onto the ruler.
+  function canvasFont(cs) {
+    var parts = [];
+    if (cs.fontStyle !== 'normal') parts.push(cs.fontStyle);
+    if (cs.fontVariant !== 'normal') parts.push(cs.fontVariant);
+    parts.push(cs.fontWeight, cs.fontSize, cs.fontFamily);
+    return parts.join(' ');
+  }
+
+  // Derive the smallest sensible box and synchronize Pretext with the live
+  // typography. Prepared text remains cached until that typography changes.
   function measure() {
     var bs = getComputedStyle(box);
     var cs = getComputedStyle(content);
@@ -468,18 +471,26 @@ if (typeof window.lookupTable === 'undefined') {
     var borderY = parseFloat(bs.borderTopWidth) + parseFloat(bs.borderBottomWidth);
 
     var fontSize = parseFloat(cs.fontSize) || 15;
-    var lineHeight = parseFloat(cs.lineHeight);
+    lineHeight = parseFloat(cs.lineHeight);
     if (!isFinite(lineHeight)) lineHeight = fontSize * 1.45;
 
     minH = Math.ceil(lineHeight + padY + borderY);
     minW = Math.ceil(fontSize * 0.65 + padX + borderX);
 
-    ruler.style.fontFamily    = cs.fontFamily;
-    ruler.style.fontSize      = cs.fontSize;
-    ruler.style.fontWeight    = cs.fontWeight;
-    ruler.style.lineHeight    = cs.lineHeight;
-    ruler.style.letterSpacing = cs.letterSpacing;
-    ruler.style.wordSpacing   = cs.wordSpacing;
+    var font = canvasFont(cs);
+    var letterSpacing = parseFloat(cs.letterSpacing);
+    if (!isFinite(letterSpacing)) letterSpacing = 0;
+
+    if (font !== pretextFont || letterSpacing !== pretextOptions.letterSpacing) {
+      pretextFont = font;
+      pretextOptions = { letterSpacing: letterSpacing };
+      preparedTexts = new Array(TEXTS.length);
+
+      // The displayed typeface is monospace, so one measured cell gives an
+      // exact upper bound on how many normalized characters the box can hold.
+      var cell = prepareWithSegments('0', pretextFont, pretextOptions);
+      cellWidth = measureNaturalWidth(cell) || fontSize * 0.6;
+    }
   }
 
   /* ------------------------------------------------------------ geometry */
@@ -544,59 +555,27 @@ if (typeof window.lookupTable === 'undefined') {
   /* ------------------------------------------------------------- fitting */
 
   function fits(i, cw, ch) {
-    ruler.textContent = TEXTS[i];
-    return ruler.scrollHeight <= ch + 0.5 && ruler.scrollWidth <= cw + 1;
+    if (cw + 0.5 < cellWidth) return false;
+    if (!preparedTexts[i]) {
+      preparedTexts[i] = prepare(TEXTS[i], pretextFont, pretextOptions);
+    }
+    return layoutText(preparedTexts[i], cw, lineHeight).height <= ch + 0.5;
   }
 
-  // Largest index whose text still fits. Every probe forces a layout, so start
-  // from the previous answer and gallop outwards: during a drag the answer only
-  // moves a few entries, which measures at ~6 probes per frame against the ~12
-  // a cold binary search over 2200 entries costs.
-  function findBestFit(cw, ch, hint) {
-    var n = TEXTS.length;
-    if (!n) return -1;
+  // Walk longest-to-shortest instead of assuming that differently worded
+  // entries fit monotonically. Pretext does the actual multiline layout; the
+  // cheap cell-capacity check skips entries that are mathematically too long.
+  function findBestFit(cw, ch) {
+    if (!TEXTS.length || cellWidth <= 0 || lineHeight <= 0) return -1;
 
-    var lo = 0, hi = n - 1, step, mid;
+    var columns = Math.floor((cw + 0.5) / cellWidth);
+    var rows = Math.floor((ch + 0.5) / lineHeight);
+    var capacity = columns * rows;
 
-    if (hint >= 0 && hint < n) {
-      if (fits(hint, cw, ch)) {
-        lo = hint;
-        step = 1;
-        while (hint + step < n && fits(hint + step, cw, ch)) {
-          lo = hint + step;
-          step *= 2;
-        }
-        hi = Math.min(n - 1, hint + step);
-      } else {
-        hi = hint - 1;
-        step = 1;
-        while (hint - step >= 0 && !fits(hint - step, cw, ch)) {
-          hi = hint - step - 1;
-          step *= 2;
-        }
-        lo = Math.max(0, hint - step);
-      }
+    for (var i = TEXTS.length - 1; i >= 0; i--) {
+      if (NORMALIZED_LENGTHS[i] <= capacity && fits(i, cw, ch)) return i;
     }
-
-    var best = -1;
-    while (lo <= hi) {
-      mid = (lo + hi) >> 1;
-      if (fits(mid, cw, ch)) { best = mid; lo = mid + 1; }
-      else { hi = mid - 1; }
-    }
-
-    // The gallop assumes "fits" is monotonic in length. It very nearly is, but
-    // a lucky line break can break that; fall back to a full sweep if the
-    // windowed search came back empty from a window that did not start at 0.
-    if (best === -1 && lo > 0) {
-      lo = 0; hi = n - 1;
-      while (lo <= hi) {
-        mid = (lo + hi) >> 1;
-        if (fits(mid, cw, ch)) { best = mid; lo = mid + 1; }
-        else { hi = mid - 1; }
-      }
-    }
-    return best;
+    return -1;
   }
 
   function render() {
@@ -605,10 +584,8 @@ if (typeof window.lookupTable === 'undefined') {
     var index = -1;
 
     if (cw > 0 && ch > 0) {
-      ruler.style.width = cw + 'px';
-      index = findBestFit(cw, ch, lastFit);
+      index = findBestFit(cw, ch);
     }
-    lastFit = index;
 
     var key = index >= 0 ? KEYS[index] : 0;
     var text = index >= 0 ? TEXTS[index] : '';

@@ -65,3 +65,12 @@ Large language models have an incredible ability to stretch and squash language 
    - Resize the text box by dragging any edge or corner, with a mouse or by touch.
    - The explanation updates to fit the new size.
    - The character count is displayed in the header.
+
+## Front-end dependency
+
+Text is measured and laid out with [Pretext](https://github.com/chenglou/pretext). A pinned browser bundle is committed in `vendor/`, so `index.html` also works when opened directly. To rebuild that bundle after changing the dependency version:
+
+```bash
+npm install
+npm run build:pretext
+```
