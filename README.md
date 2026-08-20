@@ -2,7 +2,7 @@
 
 ![Expanding and shrinking gravity explanation text](./gravity_example.gif)
 
-A LLM experiment explaining the theory of gravity in varying lengths, depending on the size of a resizable text box. As you adjust the box, the application estimates the number of characters that can fit and displays an explanation of gravity tailored to that character count.
+A LLM experiment explaining the theory of gravity in varying lengths, depending on how much room there is to say it. The text fills a procedurally drawn lake that is sized from the browser window; the application estimates how many characters fit in the water and displays an explanation of gravity tailored to that character count. Apples and stones dropped into the lake displace the text as they fall and settle.
 
 ## Why
 
@@ -62,8 +62,9 @@ Large language models have an incredible ability to stretch and squash language 
 
 2. **Interact**
 
-   - Resize the text box by dragging any edge or corner, with a mouse or by touch.
-   - The explanation updates to fit the new size.
+   - Tap or click anywhere to drop an apple or a stone into the lake.
+   - Drag them around, or let them sink; the text flows around whatever is in the water.
+   - Resize the browser window to resize the lake. The explanation updates to fit.
    - The character count is displayed in the header.
 
 ## Front-end dependency

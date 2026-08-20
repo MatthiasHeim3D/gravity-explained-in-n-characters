@@ -19,25 +19,25 @@
   --ink:         #1b1a19;
   --muted:       #6f6b66;
   --line:        #ddd8d2;
-  --handle:      #8a837b;
   --accent:      #5b5bd6;
   --accent-ring: rgba(91, 91, 214, .22);
-  --water:       rgba(64, 157, 204, .085);
-  --water-deep:  rgba(64, 157, 204, .14);
+  --water:       rgba(64, 157, 204, .13);
+  --water-deep:  rgba(64, 157, 204, .23);
   --water-line:  rgba(54, 145, 194, .48);
   --glass-line:  rgba(100, 151, 174, .48);
+  --soil:        #7d5c3d;
+  --soil-deep:   #5b422a;
+  --shore:       #6f9247;
+  --shore-deep:  #56742f;
+  --reed:        #7f9d55;
+  --reed-head:   #8d6b3e;
+  --soil-grit:   #a8825a;
+  --soil-stone:  #9a8874;
   --shadow:      0 1px 2px rgba(28,25,23,.05), 0 10px 30px -12px rgba(28,25,23,.28);
   --shadow-lift: 0 1px 2px rgba(28,25,23,.06), 0 18px 40px -14px rgba(28,25,23,.36);
 
   --radius: 12px;
-
-  /* handles: hit target and visual are deliberately decoupled */
-  --corner-hit: 30px;
-  --edge-hit:   18px;
-  --bracket:    20px;
-  --stroke:     3px;
-  --pill:       36px;
-  --pill-t:     4px;
+  --lake-bed: 26px;
 
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -51,27 +51,22 @@
     --ink:         #eceae7;
     --muted:       #97918a;
     --line:        #34302c;
-    --handle:      #7f7871;
     --accent:      #8f8bff;
     --accent-ring: rgba(143, 139, 255, .26);
-    --water:       rgba(80, 173, 218, .09);
-    --water-deep:  rgba(80, 173, 218, .15);
+    --water:       rgba(80, 173, 218, .13);
+    --water-deep:  rgba(80, 173, 218, .24);
     --water-line:  rgba(105, 196, 235, .48);
     --glass-line:  rgba(104, 169, 196, .45);
+    --soil:        #4a3626;
+    --soil-deep:   #33251a;
+    --shore:       #4d6b34;
+    --shore-deep:  #3a5326;
+    --reed:        #5f7c3f;
+    --reed-head:   #6f5433;
+    --soil-grit:   #6b5138;
+    --soil-stone:  #7a6a58;
     --shadow:      0 1px 2px rgba(0,0,0,.5), 0 10px 30px -12px rgba(0,0,0,.7);
     --shadow-lift: 0 1px 2px rgba(0,0,0,.55), 0 18px 40px -14px rgba(0,0,0,.8);
-  }
-}
-
-/* touch devices get fat, forgiving targets */
-@media (pointer: coarse) {
-  :root {
-    --corner-hit: 46px;
-    --edge-hit:   30px;
-    --bracket:    24px;
-    --stroke:     4px;
-    --pill:       40px;
-    --pill-t:     5px;
   }
 }
 
@@ -102,8 +97,6 @@ body {
     max(0px, env(safe-area-inset-bottom))
     max(16px, env(safe-area-inset-left));
 }
-
-html.no-select, html.no-select * { user-select: none; -webkit-user-select: none; }
 
 /* ---------------------------------------------------------------- header */
 .masthead {
@@ -160,52 +153,67 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   min-height: 0;
 }
 
+/* ------------------------------------------------------------------ lake */
+#lake {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .35s ease;
+}
+
+#lake.is-ready { opacity: 1; }
+
+.soil-top    { stop-color: var(--soil); }
+.soil-bottom { stop-color: var(--soil-deep); }
+
+#lakeGround { fill: url(#soilFill); }
+#lakeShore  { fill: var(--shore); }
+#lakeWater  { fill: url(#waterFill); }
+
+.water-top    { stop-color: var(--water); }
+.water-bottom { stop-color: var(--water-deep); }
+
+#lakeGrit   { stroke: var(--soil-grit);  stroke-width: 1.4; opacity: .8; }
+#lakeStones { stroke: var(--soil-stone); stroke-width: 2.8; opacity: .85; }
+
+#lakeSurface {
+  fill: none;
+  stroke: var(--water-line);
+  stroke-width: 1;
+}
+
+#lakeGrass, #lakeReedStems, #lakeReedHeads, #lakeGrit, #lakeStones {
+  fill: none;
+  stroke-linecap: round;
+}
+
+#lakeGrass     { stroke: var(--shore-deep); stroke-width: 1.4; }
+#lakeReedStems { stroke: var(--reed);       stroke-width: 1.6; }
+#lakeReedHeads { stroke: var(--reed-head);  stroke-width: 3.6; }
+
 /* ------------------------------------------------------------------- box */
+/* The water body. Everything that makes it read as a lake -- the earth, the
+   banks, the greenery -- is drawn behind it in #lake, so this stays a plain
+   rectangle and the text layout and physics vessel are unchanged. Above the
+   waterline it is transparent, which is what lets the far bank and the reeds
+   standing in the shallows show through. */
 #box {
   --waterline-y: 16px;
   position: absolute;
+  z-index: 1;
   top: auto;
-  bottom: 0;
+  bottom: var(--lake-bed);
   left: 0;
   width: 340px;
   height: 220px;
   padding: 16px;
-  border: 0 solid var(--glass-line);
-  border-right-width: 1px;
-  border-bottom-width: 1px;
-  border-left-width: 1px;
-  border-radius: 0 0 var(--radius) var(--radius);
-  background:
-    linear-gradient(to bottom,
-      transparent 0 var(--waterline-y),
-      var(--water) var(--waterline-y),
-      var(--water-deep) 100%),
-    var(--paper);
-  box-shadow: var(--shadow);
   opacity: 0;
-  transition: opacity .35s ease, box-shadow .2s ease, border-color .2s ease;
-}
-
-#box::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  top: var(--waterline-y);
-  left: 0;
-  right: 0;
-  height: 1px;
-  pointer-events: none;
-  background: var(--water-line);
-  box-shadow: 0 3px 10px rgba(64, 157, 204, .11);
+  transition: opacity .35s ease;
 }
 
 #box.is-ready { opacity: 1; }
-
-#box.is-resizing {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-lift), 0 0 0 3px var(--accent-ring);
-  transition: opacity .35s ease;
-}
 
 #boxContent {
   position: relative;
@@ -296,112 +304,6 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   #boxContent { font-size: 14px; }
 }
 
-/* --------------------------------------------------------------- handles */
-.handle {
-  --c: var(--handle);
-  position: absolute;
-  z-index: 5;
-  touch-action: none;          /* stop the browser scrolling the page mid-drag */
-  -webkit-tap-highlight-color: transparent;
-}
-
-.handle::before {
-  content: "";
-  position: absolute;
-  opacity: .85;
-  transition: width .18s ease, height .18s ease, background-color .15s ease,
-              border-color .15s ease, transform .15s ease, opacity .15s ease;
-}
-
-.handle:hover,
-.handle[data-active] { --c: var(--accent); }
-
-/* Edge handles: the whole edge is grabbable and a centred pill hints at it.
-   On hover or drag the pill stretches to the full edge to prove the point. */
-.handle.edge::before {
-  border-radius: 999px;
-  background: var(--c);
-}
-
-.handle.n {
-  left: calc(var(--corner-hit) / 2);
-  right: calc(var(--corner-hit) / 2);
-  height: var(--edge-hit);
-  cursor: ns-resize;
-}
-.handle.n { top: calc(var(--edge-hit) / -2); }
-
-.handle.e, .handle.w {
-  top: calc(var(--corner-hit) / 2);
-  bottom: calc(var(--corner-hit) / 2);
-  width: var(--edge-hit);
-  cursor: ew-resize;
-}
-.handle.e { right: calc(var(--edge-hit) / -2); }
-.handle.w { left: calc(var(--edge-hit) / -2); }
-
-.handle.n::before {
-  left: 0; right: 0; margin: 0 auto;
-  top: calc(50% - var(--pill-t) / 2);
-  width: var(--pill);
-  height: var(--pill-t);
-}
-.handle.e::before, .handle.w::before {
-  top: 0; bottom: 0; margin: auto 0;
-  left: calc(50% - var(--pill-t) / 2);
-  width: var(--pill-t);
-  height: var(--pill);
-}
-
-.handle.n:hover::before, .handle.n[data-active]::before { width: 100%; }
-
-.handle.e:hover::before, .handle.e[data-active]::before,
-.handle.w:hover::before, .handle.w[data-active]::before { height: 100%; }
-
-/* Corner handles: an L-bracket whose stroke sits centred on the box edge, so
-   it reads as a thickened corner of the box rather than a floating dot. */
-.handle.corner { width: var(--corner-hit); height: var(--corner-hit); }
-
-.handle.corner::before {
-  width: var(--bracket);
-  height: var(--bracket);
-  border: var(--stroke) solid transparent;
-}
-
-.handle.corner:hover::before,
-.handle.corner[data-active]::before { transform: scale(1.18); }
-
-.handle.nw { top: calc(var(--corner-hit) / -2); left: calc(var(--corner-hit) / -2); cursor: nwse-resize; }
-.handle.ne { top: calc(var(--corner-hit) / -2); right: calc(var(--corner-hit) / -2); cursor: nesw-resize; }
-
-.handle.nw::before {
-  top: calc(50% - var(--stroke) / 2); left: calc(50% - var(--stroke) / 2);
-  border-top-color: var(--c); border-left-color: var(--c);
-  border-radius: var(--radius) 0 0 0;
-  transform-origin: top left;
-}
-.handle.ne::before {
-  top: calc(50% - var(--stroke) / 2); right: calc(50% - var(--stroke) / 2);
-  border-top-color: var(--c); border-right-color: var(--c);
-  border-radius: 0 var(--radius) 0 0;
-  transform-origin: top right;
-}
-/* A gentle "you can grab me" pulse, only until the first interaction. */
-@keyframes handle-hint {
-  0%, 100% { opacity: .55; }
-  50%      { opacity: 1; }
-}
-html:not(.has-interacted) .handle::before {
-  animation: handle-hint 2.4s ease-in-out 3;
-}
-#box:hover .handle::before,
-.handle:hover::before,
-.handle[data-active]::before { opacity: 1; }
-
-@media (pointer: coarse) {
-  .handle::before { opacity: .95; }
-}
-
 .sr-only {
   position: absolute;
   width: 1px; height: 1px;
@@ -417,22 +319,41 @@ html:not(.has-interacted) .handle::before {
 
 <header class="masthead">
   <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
-  <p class="hint" id="hint">Tap or click anywhere to drop an apple or stone. Drag objects, or drag the vessel’s top or sides to resize.</p>
+  <p class="hint" id="hint">Tap or click anywhere to drop an apple or stone into the lake. Drag them around, or let them sink.</p>
   <a class="github-link" href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener" aria-label="View source on GitHub">
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
   </a>
 </header>
 
 <main id="stage">
-  <section id="box" aria-label="Resizable explanation box">
-    <p id="boxContent"></p>
+  <!-- Drawn from the water's rectangle by renderLake(); empty until then. -->
+  <svg id="lake" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 100">
+    <defs>
+      <linearGradient id="soilFill" x1="0" y1="0" x2="0" y2="1">
+        <stop class="soil-top" offset="0"/>
+        <stop class="soil-bottom" offset="1"/>
+      </linearGradient>
+      <linearGradient id="waterFill" x1="0" y1="0" x2="0" y2="1">
+        <stop class="water-top" offset="0"/>
+        <stop class="water-bottom" offset="1"/>
+      </linearGradient>
+      <clipPath id="soilClip"><path id="lakeGroundClip"/></clipPath>
+    </defs>
+    <path id="lakeGround"/>
+    <g clip-path="url(#soilClip)">
+      <path id="lakeGrit"/>
+      <path id="lakeStones"/>
+    </g>
+    <path id="lakeShore"/>
+    <path id="lakeWater"/>
+    <path id="lakeSurface"/>
+    <path id="lakeGrass"/>
+    <path id="lakeReedStems"/>
+    <path id="lakeReedHeads"/>
+  </svg>
 
-    <!-- Pointer-only targets, so they are decorative to assistive tech. -->
-    <div class="handle edge n"    data-dir="n"  aria-hidden="true"></div>
-    <div class="handle edge e"    data-dir="e"  aria-hidden="true"></div>
-    <div class="handle edge w"    data-dir="w"  aria-hidden="true"></div>
-    <div class="handle corner nw" data-dir="nw" aria-hidden="true"></div>
-    <div class="handle corner ne" data-dir="ne" aria-hidden="true"></div>
+  <section id="box" aria-label="Lake holding the explanation">
+    <p id="boxContent"></p>
   </section>
 </main>
 
@@ -469,7 +390,17 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var content = document.getElementById('boxContent');
   var countEl = document.getElementById('charCount');
   var statusEl = document.getElementById('status');
-  var handles = box.querySelectorAll('.handle');
+  var lake = document.getElementById('lake');
+  var lakeGround = document.getElementById('lakeGround');
+  var lakeGroundClip = document.getElementById('lakeGroundClip');
+  var lakeGrit = document.getElementById('lakeGrit');
+  var lakeStones = document.getElementById('lakeStones');
+  var lakeWater = document.getElementById('lakeWater');
+  var lakeSurface = document.getElementById('lakeSurface');
+  var lakeShore = document.getElementById('lakeShore');
+  var lakeGrass = document.getElementById('lakeGrass');
+  var lakeReedStems = document.getElementById('lakeReedStems');
+  var lakeReedHeads = document.getElementById('lakeReedHeads');
 
   // Flatten the lookup table once into parallel arrays sorted by budget.
   var KEYS = Object.keys(window.lookupTable)
@@ -484,14 +415,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     return text.trim().replace(/\s+/g, ' ').length;
   });
 
-  var CURSORS = {
-    n: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
-    nw: 'nwse-resize', ne: 'nesw-resize'
-  };
-
   var minW = 48, minH = 44;
   var padX = 0, padY = 0;
-  var interacted = false;
   var lineHeight = 21.75;
   var cellWidth = 9;
   var pretextFont = '';
@@ -499,6 +424,19 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var preparedTexts = new Array(TEXTS.length);
   var flowLineEls = [];
   var apples = [];
+
+  var LAKE_BED = 26;          // earth kept below the water, so it has a floor
+  var LAKE_MIN_BANK = 34;     // a lake without a shore is a swimming pool
+  var LAKE_MAX_BANK = 130;
+  var LAKE_MAX_WATER = 720;   // wide screens stop widening the water here
+  var LAKE_CREST = 34;        // how far the bank climbs above the waterline
+  var LAKE_SOIL = 13;         // depth of the green layer over the brown
+
+  // Vegetation is placed from a fixed pool of random numbers rather than fresh
+  // ones, so resizing slides the grass along the shore instead of reshuffling
+  // it into a different meadow on every pointer move.
+  var lakeNoise = [];
+  for (var seed = 0; seed < 256; seed++) lakeNoise.push(Math.random());
 
   var APPLE_COLLISION_RADIUS = 19.5;
   var EARTH_GRAVITY = 9.80665;       // m/s², standard gravity
@@ -557,7 +495,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   physicsWorld.setContinuousPhysics(true);
   var dragAnchorBody = physicsWorld.createBody();
   var vesselBodies = [];
-  var vesselDebugRects = [];
+  var vesselDebugShapes = [];
   var activeDrags = Object.create(null);
   var physicsDebugCanvas = null;
   var physicsDebugEnabled = false;
@@ -653,53 +591,232 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   function stageW() { return stage.clientWidth; }
   function stageH() { return stage.clientHeight; }
 
-  function geom() {
-    return { l: box.offsetLeft, t: box.offsetTop, w: box.offsetWidth, h: box.offsetHeight };
-  }
+  // The lake is no longer draggable: its size falls out of the viewport alone.
+  // Width grows with the stage up to a cap so a wide monitor does not stretch
+  // it into a canal; height is the lower two thirds, less the earth beneath.
+  function layoutLake() {
+    var w = clamp(Math.min(LAKE_MAX_WATER, stageW() - LAKE_MIN_BANK * 2),
+                  minW, Math.max(minW, stageW() - LAKE_MIN_BANK * 2));
+    var h = clamp(stageH() * 2 / 3 - LAKE_BED, minH, Math.max(minH, stageH() - LAKE_BED));
 
-  function setGeom(w, h) {
     box.style.left   = Math.round((stageW() - w) / 2) + 'px';
     box.style.top    = '';
     box.style.width  = Math.round(w) + 'px';
     box.style.height = Math.round(h) + 'px';
+
+    renderLake();
     syncVesselBodies();
     wakeApples();
   }
 
-  // Width changes symmetrically around the fixed horizontal centre. Height is
-  // taken only from the open top, leaving the vessel floor anchored in place.
-  function resizeFrom(dir, start, dx, dy) {
-    var w = start.w, h = start.h;
-    var sw = stageW(), sh = stageH();
+  /* ---------------------------------------------------------------- basin */
 
-    if (dir.indexOf('e') !== -1) {
-      w = clamp(start.w + dx * 2, minW, Math.max(minW, sw));
-    }
-    if (dir.indexOf('w') !== -1) {
-      w = clamp(start.w - dx * 2, minW, Math.max(minW, sw));
-    }
-    if (dir.indexOf('n') !== -1) {
-      h = clamp(start.h - dy, minH, Math.max(minH, sh));
-    }
-
-    setGeom(w, h);
-    return geom();
+  // The floor is a shallow bowl: deepest on the centre line, sweeping up into
+  // each wall so the bottom corners round off. One curve defines the shape,
+  // and the water fill, the earth's notch, the physics floor and the text all
+  // read from it, so they cannot drift apart.
+  function basinRise(width, height) {
+    return Math.min(clamp(width * 0.085, 14, 58), Math.max(0, height * 0.34));
   }
 
-  function centerBox() {
-    var sw = stageW(), sh = stageH();
-    var w = clamp(360, minW, Math.max(minW, sw - 24));
-    // Tall, narrow phone screens get a proportionally taller box; on a desktop
-    // stage the 240px floor wins and the default is unchanged.
-    var h = clamp(Math.max(240, sh * 0.42), minH, Math.max(minH, sh - 24));
-    setGeom(w, h);
+  // Depth lost at horizontal position x, measured from the box's own bottom.
+  function basinLift(x, width, rise) {
+    var half = width / 2;
+    if (half <= 0) return 0;
+    var u = Math.min(1, Math.abs(x - half) / half);
+    return rise * Math.pow(u, 2.6);
   }
 
-  function clampIntoStage() {
-    var sw = stageW(), sh = stageH(), g = geom();
-    var w = clamp(g.w, minW, Math.max(minW, sw));
-    var h = clamp(g.h, minH, Math.max(minH, sh));
-    setGeom(w, h);
+  // The floor as a list of points across the box, left to right.
+  function basinPoints(width, bottomY, rise, steps) {
+    var points = [];
+    for (var i = 0; i <= steps; i++) {
+      var x = width * i / steps;
+      points.push({ x: x, y: bottomY - basinLift(x, width, rise) });
+    }
+    return points;
+  }
+
+  /* ----------------------------------------------------------------- lake */
+
+  // The lake is drawn, never laid out. Everything here is derived from the
+  // water's rectangle and the basin curve: the banks sweep out from the
+  // waterline up to a crest, the earth fills the rest down to the stage floor,
+  // and the greenery is planted along the two bank curves.
+
+  function lakeRandom(i) { return lakeNoise[i % lakeNoise.length]; }
+  function round1(v) { return Math.round(v * 10) / 10; }
+
+  // A bank, as a cubic from the outer crest down to the water's edge: it lies
+  // almost flat along the top, then rolls over and drops into the water.
+  function shoreCurve(outerX, crestY, waterX, waterY) {
+    var run = waterX - outerX;
+    var fall = waterY - crestY;
+    return {
+      x0: outerX,               y0: crestY,
+      x1: outerX + run * 0.44,  y1: crestY + fall * 0.06,
+      x2: waterX - run * 0.26,  y2: crestY + fall * 0.74,
+      x3: waterX,               y3: waterY
+    };
+  }
+
+  function curveAt(c, t, axis) {
+    var u = 1 - t;
+    return u * u * u * c[axis + '0'] + 3 * u * u * t * c[axis + '1'] +
+           3 * u * t * t * c[axis + '2'] + t * t * t * c[axis + '3'];
+  }
+
+  function curveDown(c) {   // outer crest -> water
+    return 'C' + round1(c.x1) + ',' + round1(c.y1) +
+           ' ' + round1(c.x2) + ',' + round1(c.y2) +
+           ' ' + round1(c.x3) + ',' + round1(c.y3);
+  }
+
+  function curveUp(c) {     // the same bank walked water -> outer crest
+    return 'C' + round1(c.x2) + ',' + round1(c.y2) +
+           ' ' + round1(c.x1) + ',' + round1(c.y1) +
+           ' ' + round1(c.x0) + ',' + round1(c.y0);
+  }
+
+  // The green skin over the brown: the bank curve, and the same curve dropped
+  // by the soil depth, closed into a band.
+  function shoreBand(c) {
+    return 'M' + round1(c.x0) + ',' + round1(c.y0) + curveDown(c) +
+           'L' + round1(c.x3) + ',' + round1(c.y3 + LAKE_SOIL) +
+           'C' + round1(c.x2) + ',' + round1(c.y2 + LAKE_SOIL) +
+           ' ' + round1(c.x1) + ',' + round1(c.y1 + LAKE_SOIL) +
+           ' ' + round1(c.x0) + ',' + round1(c.y0 + LAKE_SOIL) + 'Z';
+  }
+
+  // Grass over the whole bank, reeds gathered down at the waterline where a
+  // few of them wade out into the shallows.
+  function plantBank(c, bank, key, grass, stems, heads) {
+    var toWater = c.x3 > c.x0 ? 1 : -1;
+    var blades = Math.max(4, Math.round(bank / 6));
+    var i, t, baseX, baseY, height, lean;
+
+    for (i = 0; i < blades; i++) {
+      t = Math.min(0.99, 0.05 + (i + lakeRandom(key + i)) / blades * 0.92);
+      baseX = curveAt(c, t, 'x');
+      baseY = curveAt(c, t, 'y');
+      height = 6 + lakeRandom(key + i + 61) * 9;
+      lean = (lakeRandom(key + i + 127) - 0.5) * height * 1.1;
+      grass.push('M' + round1(baseX) + ',' + round1(baseY) +
+        'Q' + round1(baseX + lean * 0.3) + ',' + round1(baseY - height * 0.62) +
+        ' ' + round1(baseX + lean) + ',' + round1(baseY - height));
+    }
+
+    var count = Math.max(2, Math.round(bank / 30));
+    for (i = 0; i < count; i++) {
+      t = Math.min(1, 0.6 + (i + lakeRandom(key + i + 17)) / count * 0.44);
+      baseX = curveAt(c, t, 'x');
+      baseY = curveAt(c, t, 'y');
+
+      // Past the water's edge the bank curve has nothing left to say, so a
+      // wading reed is planted straight onto the surface instead.
+      var wade = lakeRandom(key + i + 199) * 9;
+      if (wade > 4) {
+        baseX = c.x3 + toWater * (wade - 4);
+        baseY = c.y3;
+      }
+
+      height = 19 + lakeRandom(key + i + 83) * 21;
+      lean = (lakeRandom(key + i + 149) - 0.5) * 11;
+      var tipX = baseX + lean;
+      var tipY = baseY - height;
+      stems.push('M' + round1(baseX) + ',' + round1(baseY) +
+        'Q' + round1(baseX + lean * 0.28) + ',' + round1(baseY - height * 0.55) +
+        ' ' + round1(tipX) + ',' + round1(tipY));
+      heads.push('M' + round1(tipX - lean * 0.14) + ',' + round1(tipY + height * 0.17) +
+        'L' + round1(tipX) + ',' + round1(tipY));
+    }
+  }
+
+  // A run of points as an SVG polyline body, with no leading move command.
+  function lineThrough(points) {
+    var d = '';
+    for (var i = 0; i < points.length; i++) {
+      d += 'L' + round1(points[i].x) + ',' + round1(points[i].y);
+    }
+    return d;
+  }
+
+  // Grit: specks and pebbles scattered through the earth and clipped to it.
+  // Drawn from the fixed noise pool, so they stay put across re-renders.
+  function soilGrit(left, right, top, bottom) {
+    var area = Math.max(0, (right - left) * (bottom - top));
+    var count = Math.min(700, Math.round(area / 950));
+    var speck = [], stone = [], i, x, y, size;
+
+    for (i = 0; i < count; i++) {
+      x = left + lakeRandom(i * 3) * (right - left);
+      y = top + lakeRandom(i * 3 + 1) * (bottom - top);
+      size = lakeRandom(i * 3 + 2);
+      if (size > 0.87) {
+        stone.push('M' + round1(x) + ',' + round1(y) +
+                   'L' + round1(x + 1.6 + size * 2.4) + ',' + round1(y + 0.5));
+      } else {
+        speck.push('M' + round1(x) + ',' + round1(y) +
+                   'L' + round1(x + 0.5) + ',' + round1(y));
+      }
+    }
+    return { speck: speck.join(''), stone: stone.join('') };
+  }
+
+  function renderLake() {
+    var sw = stageW(), sh = stageH();
+    if (!lake || sw <= 0 || sh <= 0) return;
+
+    var waterL = box.offsetLeft;
+    var width = box.offsetWidth;
+    var waterR = waterL + width;
+    var waterY = box.offsetTop + content.offsetTop;   // the surface, as physics sees it
+    var bottomY = box.offsetTop + box.offsetHeight;
+
+    var floor = basinPoints(width, bottomY, basinRise(width, bottomY - waterY), 48);
+    for (var i = 0; i < floor.length; i++) floor[i].x += waterL;
+
+    var bank = clamp((sw - width) / 2, LAKE_MIN_BANK, LAKE_MAX_BANK);
+    var crestY = Math.max(0, waterY - LAKE_CREST);
+    var outerL = Math.max(0, waterL - bank);
+    var outerR = Math.min(sw, waterR + bank);
+    var left = shoreCurve(outerL, crestY, waterL, waterY);
+    var right = shoreCurve(outerR, crestY, waterR, waterY);
+
+    // One outline for all the earth: down the far bank, across the lake floor,
+    // up the near bank, then back around the outside.
+    var ground =
+      'M' + round1(outerL) + ',' + sh +
+      'L' + round1(outerL) + ',' + round1(crestY) + curveDown(left) +
+      lineThrough(floor) +
+      'L' + round1(waterR) + ',' + round1(waterY) + curveUp(right) +
+      'L' + round1(outerR) + ',' + sh + 'Z';
+    lakeGround.setAttribute('d', ground);
+    lakeGroundClip.setAttribute('d', ground);
+
+    // The water is that same floor, closed off along the surface.
+    lakeWater.setAttribute('d',
+      'M' + round1(waterL) + ',' + round1(waterY) + lineThrough(floor) +
+      'L' + round1(waterR) + ',' + round1(waterY) + 'Z');
+
+    lakeSurface.setAttribute('d',
+      'M' + round1(waterL) + ',' + round1(waterY) +
+      'L' + round1(waterR) + ',' + round1(waterY));
+
+    lakeShore.setAttribute('d', shoreBand(left) + shoreBand(right));
+
+    var grit = soilGrit(outerL, outerR, crestY, sh);
+    lakeGrit.setAttribute('d', grit.speck);
+    lakeStones.setAttribute('d', grit.stone);
+
+    var grass = [], stems = [], heads = [];
+    plantBank(left, bank, 0, grass, stems, heads);
+    plantBank(right, bank, 128, grass, stems, heads);
+    lakeGrass.setAttribute('d', grass.join(''));
+    lakeReedStems.setAttribute('d', stems.join(''));
+    lakeReedHeads.setAttribute('d', heads.join(''));
+
+    lake.setAttribute('viewBox', '0 0 ' + sw + ' ' + sh);
   }
 
   /* ------------------------------------------------------------- fitting */
@@ -911,10 +1028,40 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     announce(key);
   }
 
+  // The basin's two rising corners, as obstacles in the text's own
+  // coordinates. Splitting them at the centre line is what leaves the middle
+  // of each low line free: one polygon spanning the whole floor would report a
+  // single interval and blank the row entirely.
+  function basinObstacles(cw, ch) {
+    var rise = basinRise(box.clientWidth, box.clientHeight - content.offsetTop);
+    var floorBottom = ch + (padY - content.offsetTop);   // box bottom, in text space
+    if (rise <= floorBottom - ch) return [];             // the bowl stays clear of the text
+
+    var steps = 16;
+    var half = cw / 2;
+    var sides = [];
+
+    for (var side = 0; side < 2; side++) {
+      var points = [];
+      for (var i = 0; i <= steps; i++) {
+        var t = i / steps;
+        var x = side === 0 ? half * t : half + half * t;
+        points.push({
+          x: x,
+          y: floorBottom - basinLift(x + padX / 2, box.clientWidth, rise)
+        });
+      }
+      points.push({ x: side === 0 ? half : cw, y: floorBottom + rise + 8 });
+      points.push({ x: side === 0 ? 0 : half, y: floorBottom + rise + 8 });
+      sides.push({ points: points, padding: 3 });
+    }
+    return sides;
+  }
+
   function render() {
     var cw = box.clientWidth - padX;
     var ch = box.clientHeight - padY;
-    var obstacles = getAppleObstacles();
+    var obstacles = basinObstacles(cw, ch).concat(getAppleObstacles());
 
     if (cw <= 0 || ch <= 0) {
       showResult(-1, obstacles.length ? [] : null);
@@ -956,6 +1103,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   if (typeof ResizeObserver === 'function') {
     new ResizeObserver(queueRender).observe(box);
+    new ResizeObserver(function () { layoutLake(); queueRender(); }).observe(stage);
   }
 
   /* --------------------------------------------------------------- apples */
@@ -1303,10 +1451,16 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     ctx.lineWidth = 1.25;
     ctx.strokeStyle = 'rgba(14, 165, 233, .9)';
     ctx.fillStyle = 'rgba(14, 165, 233, .07)';
-    for (var i = 0; i < vesselDebugRects.length; i++) {
-      var rect = vesselDebugRects[i];
-      ctx.fillRect(rect.x - rect.width / 2, rect.y - rect.height / 2, rect.width, rect.height);
-      ctx.strokeRect(rect.x - rect.width / 2, rect.y - rect.height / 2, rect.width, rect.height);
+    for (var i = 0; i < vesselDebugShapes.length; i++) {
+      var shape = vesselDebugShapes[i];
+      ctx.beginPath();
+      for (var v = 0; v < shape.length; v++) {
+        if (v === 0) ctx.moveTo(shape[v].x, shape[v].y);
+        else ctx.lineTo(shape[v].x, shape[v].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     }
 
     for (i = 0; i < apples.length; i++) {
@@ -1388,7 +1542,34 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       { friction: 0.42, restitution: 0.04 }
     );
     vesselBodies.push(body);
-    vesselDebugRects.push({ x: x, y: y, width: width, height: height });
+    vesselDebugShapes.push([
+      { x: x - width / 2, y: y - height / 2 }, { x: x + width / 2, y: y - height / 2 },
+      { x: x + width / 2, y: y + height / 2 }, { x: x - width / 2, y: y + height / 2 }
+    ]);
+  }
+
+  // One static body carrying a quad per floor segment. Planck builds its own
+  // convex hull per fixture, so the segments only have to be handed over in
+  // order; together they read as a single curved bed.
+  function addVesselFloor(points) {
+    var body = physicsWorld.createBody({ type: 'static', position: Physics.Vec2(0, 0) });
+
+    for (var i = 0; i < points.length - 1; i++) {
+      var a = points[i], b = points[i + 1];
+      var quad = [
+        Physics.Vec2(a.x / PIXELS_PER_METER, a.y / PIXELS_PER_METER),
+        Physics.Vec2(b.x / PIXELS_PER_METER, b.y / PIXELS_PER_METER),
+        Physics.Vec2(b.x / PIXELS_PER_METER, (b.y + WALL_THICKNESS) / PIXELS_PER_METER),
+        Physics.Vec2(a.x / PIXELS_PER_METER, (a.y + WALL_THICKNESS) / PIXELS_PER_METER)
+      ];
+      body.createFixture(new Physics.Polygon(quad), { friction: 0.42, restitution: 0.04 });
+      vesselDebugShapes.push([
+        { x: a.x, y: a.y }, { x: b.x, y: b.y },
+        { x: b.x, y: b.y + WALL_THICKNESS }, { x: a.x, y: a.y + WALL_THICKNESS }
+      ]);
+    }
+
+    vesselBodies.push(body);
   }
 
   function syncVesselBodies() {
@@ -1396,7 +1577,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       physicsWorld.destroyBody(vesselBodies[i]);
     }
     vesselBodies = [];
-    vesselDebugRects = [];
+    vesselDebugShapes = [];
 
     var rect = box.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) {
@@ -1404,8 +1585,9 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       return;
     }
 
-    // These three rigid bodies form a U: the top is genuinely open. Walls sit
-    // outside the visible glass, so their inner faces match its exact edges.
+    // Two walls and a curved bed, open at the top. The bed is the same basin
+    // curve the lake is drawn from, so a stone rolls down the slope it looks
+    // like it is sitting on.
     var wallHeight = rect.height + WALL_THICKNESS;
     addVesselBox(
       rect.left - WALL_THICKNESS / 2,
@@ -1419,12 +1601,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       WALL_THICKNESS,
       wallHeight
     );
-    addVesselBox(
-      rect.left + rect.width / 2,
-      rect.bottom + WALL_THICKNESS / 2,
-      rect.width,
-      WALL_THICKNESS
-    );
+
+    var floor = basinPoints(rect.width, rect.bottom,
+      basinRise(rect.width, rect.height - content.offsetTop), 24);
+    for (var f = 0; f < floor.length; f++) floor[f].x += rect.left;
+    addVesselFloor(floor);
+
     drawPhysicsDebug();
   }
 
@@ -1673,63 +1855,6 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     delete tapStarts[e.pointerId];
   }, true);
 
-  /* ------------------------------------------------------------ dragging */
-
-  function markInteracted() {
-    if (interacted) return;
-    interacted = true;
-    document.documentElement.classList.add('has-interacted');
-  }
-
-  Array.prototype.forEach.call(handles, function (handle) {
-    var dir = handle.getAttribute('data-dir');
-
-    handle.addEventListener('pointerdown', function (e) {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      e.preventDefault();
-      markInteracted();
-
-      // Pointer capture keeps the drag alive past the box edge and past the
-      // window, and retargets every move/up to this element: no document-level
-      // listener juggling, and no touch lost to a fast flick.
-      try { handle.setPointerCapture(e.pointerId); } catch (err) {}
-
-      var start = geom();
-      var sx = e.clientX, sy = e.clientY;
-      var frame = 0, latest = null;
-
-      measure();
-      box.classList.add('is-resizing');
-      handle.setAttribute('data-active', '');
-      document.documentElement.classList.add('no-select');
-      document.body.style.cursor = CURSORS[dir] || '';
-      function onMove(ev) {
-        latest = ev;
-        if (frame) return;
-        frame = requestAnimationFrame(function () {
-          frame = 0;
-          resizeFrom(dir, start, latest.clientX - sx, latest.clientY - sy);
-        });
-      }
-
-      function onEnd() {
-        if (frame) { cancelAnimationFrame(frame); frame = 0; }
-        handle.removeEventListener('pointermove', onMove);
-        handle.removeEventListener('pointerup', onEnd);
-        handle.removeEventListener('pointercancel', onEnd);
-        box.classList.remove('is-resizing');
-        handle.removeAttribute('data-active');
-        document.documentElement.classList.remove('no-select');
-        document.body.style.cursor = '';
-        try { handle.releasePointerCapture(e.pointerId); } catch (err) {}
-      }
-
-      handle.addEventListener('pointermove', onMove);
-      handle.addEventListener('pointerup', onEnd);
-      handle.addEventListener('pointercancel', onEnd);
-    });
-  });
-
   /* ---------------------------------------------------------------- boot */
 
   function debounce(fn, wait) {
@@ -1742,18 +1867,16 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   window.addEventListener('resize', debounce(function () {
     measure();
-    // An untouched vessel returns to its responsive default. Once the reader
-    // has sized it, preserve those dimensions within the new viewport; its
-    // centre and floor remain anchored in either case.
-    if (interacted) clampIntoStage(); else centerBox();
+    layoutLake();
     queueRender();
   }, 120));
 
   initPhysicsDebug();
   measure();
-  centerBox();
+  layoutLake();
   render();
   box.classList.add('is-ready');
+  lake.classList.add('is-ready');
 
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(function () { measure(); render(); });
