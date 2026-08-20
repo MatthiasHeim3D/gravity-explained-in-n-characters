@@ -242,7 +242,9 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   z-index: 10;
   width: 44px;
   height: 44px;
-  pointer-events: none;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
   user-select: none;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   font-size: 40px;
@@ -250,6 +252,31 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   text-align: center;
   filter: drop-shadow(0 4px 3px rgba(28, 25, 23, .2));
   will-change: transform;
+}
+
+.apple.is-dragging { cursor: grabbing; }
+
+.ascii-splash {
+  position: fixed;
+  z-index: 9;
+  margin: 0;
+  pointer-events: none;
+  color: var(--water-line);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: .78;
+  text-align: center;
+  white-space: pre;
+  text-shadow: 0 1px 5px var(--water);
+  transform-origin: center bottom;
+  animation: ascii-splash .7s ease-out forwards;
+}
+
+@keyframes ascii-splash {
+  0%   { opacity: 0; transform: translate(-50%, -45%) scale(.35); }
+  18%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -105%) scale(1.35); }
 }
 
 @media (pointer: coarse) {
@@ -385,7 +412,7 @@ html:not(.has-interacted) .handle::before {
 
 <header class="masthead">
   <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
-  <p class="hint" id="hint">Tap or click anywhere to drop an apple. Drag the vessel’s top or sides to resize.</p>
+  <p class="hint" id="hint">Tap or click anywhere to drop an apple. Drag apples, or drag the vessel’s top or sides to resize.</p>
   <a class="github-link" href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener" aria-label="View source on GitHub">
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
   </a>
@@ -473,7 +500,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var APPLE_WRAP_RADIUS = APPLE_RADIUS + 5;
   var APPLE_COLLISION_RADIUS = 19.5;
   var GRAVITY = 1450;
-  var BUOYANCY = 4200;
+  var BUOYANCY = 2100;
   var WATER_DRAG = 8;
   var PHYSICS_SCALE = 50;
   var PHYSICS_STEP = 1 / 120;
@@ -484,7 +511,9 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   });
   physicsWorld.setAllowSleeping(true);
   physicsWorld.setContinuousPhysics(true);
+  var dragAnchorBody = physicsWorld.createBody();
   var vesselBodies = [];
+  var activeDrags = Object.create(null);
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -844,9 +873,88 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       apple.angle.toFixed(1) + 'deg)';
   }
 
+  function splashAt(x, y) {
+    var splash = document.createElement('pre');
+    splash.className = 'ascii-splash';
+    splash.setAttribute('aria-hidden', 'true');
+    splash.style.left = Math.round(x) + 'px';
+    splash.style.top = Math.round(y) + 'px';
+    splash.textContent = '  \\  |  /\n.  \\ | /  .\n~~~  *  ~~~';
+    document.body.appendChild(splash);
+    splash.addEventListener('animationend', function () { splash.remove(); }, { once: true });
+  }
+
   var appleFrame = 0;
   var lastAppleTime = 0;
   var physicsAccumulator = 0;
+
+  function ensureAppleFrame() {
+    if (appleFrame) return;
+    lastAppleTime = 0;
+    physicsAccumulator = 0;
+    appleFrame = requestAnimationFrame(animateApples);
+  }
+
+  function endAppleDrag(pointerId) {
+    var drag = activeDrags[pointerId];
+    if (!drag) return;
+    physicsWorld.destroyJoint(drag.joint);
+    delete activeDrags[pointerId];
+    drag.apple.dragPointer = null;
+    drag.apple.el.classList.remove('is-dragging');
+  }
+
+  function makeAppleDraggable(apple) {
+    apple.el.addEventListener('pointerdown', function (e) {
+      if ((e.pointerType === 'mouse' && e.button !== 0) || apple.dragPointer != null) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      var target = Physics.Vec2(e.clientX / PHYSICS_SCALE, e.clientY / PHYSICS_SCALE);
+      var joint = new Physics.MouseJoint({
+        maxForce: apple.body.getMass() * 300,
+        frequencyHz: 7,
+        dampingRatio: 0.88
+      }, dragAnchorBody, apple.body, target);
+      physicsWorld.createJoint(joint);
+      activeDrags[e.pointerId] = { apple: apple, joint: joint };
+      apple.dragPointer = e.pointerId;
+      apple.el.classList.add('is-dragging');
+      apple.body.setAwake(true);
+      ensureAppleFrame();
+      try { apple.el.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+
+    apple.el.addEventListener('pointermove', function (e) {
+      var drag = activeDrags[e.pointerId];
+      if (!drag || drag.apple !== apple) return;
+      e.preventDefault();
+      drag.joint.setTarget(Physics.Vec2(
+        e.clientX / PHYSICS_SCALE,
+        e.clientY / PHYSICS_SCALE
+      ));
+      apple.body.setAwake(true);
+      ensureAppleFrame();
+    });
+
+    function finish(e) {
+      if (!activeDrags[e.pointerId]) return;
+      e.preventDefault();
+      endAppleDrag(e.pointerId);
+      try { apple.el.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+
+    apple.el.addEventListener('pointerup', finish);
+    apple.el.addEventListener('pointercancel', finish);
+    apple.el.addEventListener('lostpointercapture', finish);
+  }
+
+  function removeApple(apple, index) {
+    if (apple.dragPointer != null) endAppleDrag(apple.dragPointer);
+    physicsWorld.destroyBody(apple.body);
+    apple.el.remove();
+    apples.splice(index, 1);
+  }
 
   function addVesselBox(x, y, width, height) {
     var body = physicsWorld.createBody({
@@ -895,11 +1003,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   function wakeApples() {
     if (!apples.length) return;
     for (var i = 0; i < apples.length; i++) apples[i].body.setAwake(true);
-    if (!appleFrame) {
-      lastAppleTime = 0;
-      physicsAccumulator = 0;
-      appleFrame = requestAnimationFrame(animateApples);
-    }
+    ensureAppleFrame();
   }
 
   function applyWaterForces(water, vessel) {
@@ -930,6 +1034,26 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     }
   }
 
+  function checkForSplash(apple, water, vessel, now) {
+    var overWater = apple.x > vessel.left && apple.x < vessel.right;
+    var touchesWater = overWater &&
+      apple.y + APPLE_COLLISION_RADIUS >= water.top &&
+      apple.y - APPLE_COLLISION_RADIUS < vessel.bottom;
+
+    if (touchesWater && !apple.inWater) {
+      var downwardSpeed = apple.body.getLinearVelocity().y;
+      if (downwardSpeed > 0.8 && now - apple.lastSplash > 450) {
+        splashAt(clamp(apple.x, vessel.left, vessel.right), water.top);
+        apple.lastSplash = now;
+      }
+      apple.inWater = true;
+    } else if (!overWater ||
+        apple.y + APPLE_COLLISION_RADIUS < water.top - 4 ||
+        apple.y - APPLE_COLLISION_RADIUS > vessel.bottom) {
+      apple.inWater = false;
+    }
+  }
+
   function animateApples(now) {
     var dt = lastAppleTime ? Math.min((now - lastAppleTime) / 1000, 0.05) : 0;
     lastAppleTime = now;
@@ -949,14 +1073,13 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       apple.x = position.x * PHYSICS_SCALE;
       apple.y = position.y * PHYSICS_SCALE;
       apple.angle = apple.body.getAngle() * 180 / Math.PI;
+      checkForSplash(apple, water, vessel, now);
       positionApple(apple);
 
       // Spilled apples have no floor outside the vessel. Once their top has
       // crossed the viewport floor they are gone, both visually and physically.
       if (apple.y - APPLE_RADIUS > window.innerHeight) {
-        physicsWorld.destroyBody(apple.body);
-        apple.el.remove();
-        apples.splice(i, 1);
+        removeApple(apple, i);
       }
     }
 
@@ -998,7 +1121,10 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       body: body,
       x: x,
       y: y,
-      angle: angle * 180 / Math.PI
+      angle: angle * 180 / Math.PI,
+      dragPointer: null,
+      inWater: false,
+      lastSplash: -Infinity
     };
 
     el.className = 'apple';
@@ -1006,9 +1132,10 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     el.textContent = '🍎';
     document.body.appendChild(el);
     apples.push(apple);
+    makeAppleDraggable(apple);
     positionApple(apple);
 
-    if (!appleFrame) appleFrame = requestAnimationFrame(animateApples);
+    ensureAppleFrame();
   }
 
   // Distinguish a tap/click from a resize drag so grabbing a handle does not
@@ -1017,6 +1144,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var tapStarts = Object.create(null);
   window.addEventListener('pointerdown', function (e) {
     if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (e.target.closest && e.target.closest('.apple')) return;
     tapStarts[e.pointerId] = { x: e.clientX, y: e.clientY, moved: false };
   }, true);
 
