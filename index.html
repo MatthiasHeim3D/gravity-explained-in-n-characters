@@ -728,14 +728,42 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     return -1;
   }
 
-  function ellipseIntervalForBand(ellipse, top, bottom) {
-    var dy = 0;
-    if (ellipse.cy < top) dy = top - ellipse.cy;
-    else if (ellipse.cy > bottom) dy = ellipse.cy - bottom;
-    if (dy >= ellipse.ry) return null;
+  function clipPolygonAtY(points, boundary, keepGreater) {
+    if (!points.length) return [];
+    var clipped = [];
+    var previous = points[points.length - 1];
+    var previousInside = keepGreater ? previous.y >= boundary : previous.y <= boundary;
 
-    var halfWidth = ellipse.rx * Math.sqrt(1 - dy * dy / (ellipse.ry * ellipse.ry));
-    return { left: ellipse.cx - halfWidth, right: ellipse.cx + halfWidth };
+    for (var i = 0; i < points.length; i++) {
+      var current = points[i];
+      var currentInside = keepGreater ? current.y >= boundary : current.y <= boundary;
+      if (currentInside !== previousInside) {
+        var t = (boundary - previous.y) / (current.y - previous.y);
+        clipped.push({
+          x: previous.x + (current.x - previous.x) * t,
+          y: boundary
+        });
+      }
+      if (currentInside) clipped.push(current);
+      previous = current;
+      previousInside = currentInside;
+    }
+    return clipped;
+  }
+
+  function polygonIntervalForBand(polygon, top, bottom) {
+    var padding = polygon.padding;
+    var clipped = clipPolygonAtY(polygon.points, top - padding, true);
+    clipped = clipPolygonAtY(clipped, bottom + padding, false);
+    if (!clipped.length) return null;
+
+    var left = Infinity;
+    var right = -Infinity;
+    for (var i = 0; i < clipped.length; i++) {
+      left = Math.min(left, clipped[i].x);
+      right = Math.max(right, clipped[i].x);
+    }
+    return { left: left - padding, right: right + padding };
   }
 
   // Turn every text line into one or more horizontal slots by carving the
@@ -752,7 +780,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       var blocked = [];
 
       for (var i = 0; i < obstacles.length; i++) {
-        var interval = ellipseIntervalForBand(obstacles[i], top, bottom);
+        var interval = polygonIntervalForBand(obstacles[i], top, bottom);
         if (!interval || interval.right <= 0 || interval.left >= cw) continue;
         blocked.push({
           left: clamp(interval.left, 0, cw),
@@ -939,16 +967,29 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var obstacles = [];
     for (var i = 0; i < apples.length; i++) {
       var apple = apples[i];
-      if (apple.x + apple.wrapRadiusX <= rect.left ||
-          apple.x - apple.wrapRadiusX >= rect.right ||
-          apple.y + apple.wrapRadiusY <= rect.top ||
-          apple.y - apple.wrapRadiusY >= rect.bottom) continue;
+      var points = [];
+      var minX = Infinity, minY = Infinity;
+      var maxX = -Infinity, maxY = -Infinity;
+      for (var j = 0; j < apple.collisionVertices.length; j++) {
+        var worldPoint = apple.body.getWorldPoint(apple.collisionVertices[j]);
+        var point = {
+          x: worldPoint.x * PIXELS_PER_METER - rect.left,
+          y: worldPoint.y * PIXELS_PER_METER - rect.top
+        };
+        points.push(point);
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+      }
+
+      var padding = 5;
+      if (maxX + padding <= 0 || minX - padding >= rect.width ||
+          maxY + padding <= 0 || minY - padding >= rect.height) continue;
 
       obstacles.push({
-        cx: apple.x - rect.left,
-        cy: apple.y - rect.top,
-        rx: apple.wrapRadiusX,
-        ry: apple.wrapRadiusY
+        points: points,
+        padding: padding
       });
     }
     return obstacles;
@@ -1572,8 +1613,6 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       collisionTop: collision.top,
       collisionBottom: collision.bottom,
       collisionVertices: collision.vertices,
-      wrapRadiusX: visualWidth / 2 + 5,
-      wrapRadiusY: visualHeight / 2 + 5,
       radiusMeters: radiusMeters,
       volumeM3: volumeM3,
       dragCoefficient: isStone ? STONE_DRAG_COEFFICIENT : APPLE_DRAG_COEFFICIENT,
