@@ -159,6 +159,7 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
 }
 
 #boxContent {
+  position: relative;
   width: 100%;
   height: 100%;
   margin: 0;
@@ -170,6 +171,35 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   word-break: normal;
   overflow-wrap: break-word;
   overflow: hidden;
+}
+
+.text-line {
+  position: absolute;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.text-line.is-justified {
+  text-align: justify;
+  text-align-last: justify;
+}
+
+.apple {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+  user-select: none;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 40px;
+  line-height: 44px;
+  text-align: center;
+  filter: drop-shadow(0 4px 3px rgba(28, 25, 23, .2));
+  will-change: transform;
 }
 
 @media (pointer: coarse) {
@@ -347,7 +377,7 @@ html:not(.has-interacted) .handle::before {
 
 <header class="masthead">
   <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
-  <p class="hint" id="hint">Drag any edge or corner to resize the box.</p>
+  <p class="hint" id="hint">Tap or click anywhere to drop an apple into the box. Drag any edge or corner to resize.</p>
 </header>
 
 <main id="stage">
@@ -393,8 +423,8 @@ if (typeof window.lookupTable === 'undefined') {
 <script src="vendor/pretext.js"></script>
 <script>
 var layoutText = Pretext.layout;
+var layoutNextLine = Pretext.layoutNextLine;
 var measureNaturalWidth = Pretext.measureNaturalWidth;
-var prepare = Pretext.prepare;
 var prepareWithSegments = Pretext.prepareWithSegments;
 
 (function () {
@@ -433,6 +463,15 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var pretextFont = '';
   var pretextOptions = { letterSpacing: 0 };
   var preparedTexts = new Array(TEXTS.length);
+  var flowLineEls = [];
+  var apples = [];
+
+  var APPLE_SIZE = 44;
+  var APPLE_RADIUS = APPLE_SIZE / 2;
+  var APPLE_WRAP_RADIUS = APPLE_RADIUS + 5;
+  var GRAVITY = 1450;
+  var BUOYANCY = 4200;
+  var WATER_DRAG = 8;
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -494,6 +533,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     box.style.top    = Math.round(t) + 'px';
     box.style.width  = Math.round(w) + 'px';
     box.style.height = Math.round(h) + 'px';
+    wakeApples();
   }
 
   // One resize model shared by pointer drags and keyboard nudges: the edge you
@@ -544,7 +584,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   function fits(i, cw, ch) {
     if (cw + 0.5 < cellWidth) return false;
     if (!preparedTexts[i]) {
-      preparedTexts[i] = prepare(TEXTS[i], pretextFont, pretextOptions);
+      preparedTexts[i] = prepareWithSegments(TEXTS[i], pretextFont, pretextOptions);
     }
     return layoutText(preparedTexts[i], cw, lineHeight).height <= ch + 0.5;
   }
@@ -565,22 +605,177 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     return -1;
   }
 
-  function render() {
-    var cw = box.clientWidth - padX;
-    var ch = box.clientHeight - padY;
-    var index = -1;
+  function circleIntervalForBand(circle, top, bottom) {
+    var dy = 0;
+    if (circle.cy < top) dy = top - circle.cy;
+    else if (circle.cy > bottom) dy = circle.cy - bottom;
+    if (dy >= circle.r) return null;
 
-    if (cw > 0 && ch > 0) {
-      index = findBestFit(cw, ch);
+    var halfWidth = Math.sqrt(circle.r * circle.r - dy * dy);
+    return { left: circle.cx - halfWidth, right: circle.cx + halfWidth };
+  }
+
+  // Turn every text line into one or more horizontal slots by carving the
+  // falling apples out of it. A line can therefore continue on both sides of
+  // an apple instead of treating the whole row as unavailable.
+  function buildFlowBands(cw, ch, obstacles) {
+    var bands = [];
+    var rows = Math.floor((ch + 0.5) / lineHeight);
+    var capacity = 0;
+
+    for (var row = 0; row < rows; row++) {
+      var top = row * lineHeight;
+      var bottom = top + lineHeight;
+      var blocked = [];
+
+      for (var i = 0; i < obstacles.length; i++) {
+        var interval = circleIntervalForBand(obstacles[i], top, bottom);
+        if (!interval || interval.right <= 0 || interval.left >= cw) continue;
+        blocked.push({
+          left: clamp(interval.left, 0, cw),
+          right: clamp(interval.right, 0, cw)
+        });
+      }
+
+      blocked.sort(function (a, b) { return a.left - b.left; });
+      var merged = [];
+      for (var j = 0; j < blocked.length; j++) {
+        var last = merged[merged.length - 1];
+        if (last && blocked[j].left <= last.right) {
+          last.right = Math.max(last.right, blocked[j].right);
+        } else {
+          merged.push({ left: blocked[j].left, right: blocked[j].right });
+        }
+      }
+
+      var slots = [];
+      var left = 0;
+      for (var k = 0; k < merged.length; k++) {
+        if (merged[k].left - left + 0.5 >= cellWidth) {
+          slots.push({ left: left, width: merged[k].left - left });
+        }
+        left = Math.max(left, merged[k].right);
+      }
+      if (cw - left + 0.5 >= cellWidth) {
+        slots.push({ left: left, width: cw - left });
+      }
+
+      for (var s = 0; s < slots.length; s++) {
+        capacity += Math.floor((slots[s].width + 0.5) / cellWidth);
+      }
+      bands.push({ top: top, slots: slots });
     }
 
+    return { bands: bands, capacity: capacity };
+  }
+
+  function layoutInBands(prepared, bands, fallbackWidth, collectLines) {
+    var cursor = { segmentIndex: 0, graphemeIndex: 0 };
+    var lines = collectLines ? [] : null;
+
+    for (var row = 0; row < bands.length; row++) {
+      var slots = bands[row].slots;
+      for (var s = 0; s < slots.length; s++) {
+        var line = layoutNextLine(prepared, cursor, slots[s].width);
+        if (line === null) return { complete: true, lines: lines || [] };
+        if (lines) {
+          lines.push({
+            left: slots[s].left,
+            top: bands[row].top,
+            width: slots[s].width,
+            text: line.text
+          });
+        }
+        cursor = line.end;
+      }
+    }
+
+    return {
+      complete: layoutNextLine(prepared, cursor, fallbackWidth) === null,
+      lines: lines || []
+    };
+  }
+
+  function findBestFlow(cw, flow) {
+    for (var i = TEXTS.length - 1; i >= 0; i--) {
+      if (NORMALIZED_LENGTHS[i] > flow.capacity) continue;
+      if (!preparedTexts[i]) {
+        preparedTexts[i] = prepareWithSegments(TEXTS[i], pretextFont, pretextOptions);
+      }
+      var result = layoutInBands(preparedTexts[i], flow.bands, cw, true);
+      if (result.complete) return { index: i, lines: result.lines };
+    }
+    return { index: -1, lines: [] };
+  }
+
+  function syncFlowLines(lines, text) {
+    if (!content.classList.contains('is-flowing')) {
+      content.textContent = '';
+      content.classList.add('is-flowing');
+      flowLineEls = [];
+    }
+
+    while (flowLineEls.length < lines.length) {
+      var el = document.createElement('span');
+      el.className = 'text-line';
+      content.appendChild(el);
+      flowLineEls.push(el);
+    }
+
+    for (var i = 0; i < flowLineEls.length; i++) {
+      var lineEl = flowLineEls[i];
+      var line = lines[i];
+      if (!line) {
+        lineEl.style.display = 'none';
+        continue;
+      }
+      lineEl.style.display = 'block';
+      lineEl.style.left = line.left + 'px';
+      lineEl.style.top = line.top + 'px';
+      lineEl.style.width = line.width + 'px';
+      lineEl.className = 'text-line' + (i < lines.length - 1 ? ' is-justified' : '');
+      if (lineEl.textContent !== line.text) lineEl.textContent = line.text;
+    }
+
+    content.setAttribute('aria-label', text);
+  }
+
+  function showResult(index, lines) {
     var key = index >= 0 ? KEYS[index] : 0;
     var text = index >= 0 ? TEXTS[index] : '';
 
-    if (countEl.textContent !== String(key)) countEl.textContent = key;
-    if (content.textContent !== text) content.textContent = text;
+    if (lines) {
+      syncFlowLines(lines, text);
+    } else {
+      if (content.classList.contains('is-flowing')) {
+        content.classList.remove('is-flowing');
+        content.textContent = '';
+        flowLineEls = [];
+      }
+      content.removeAttribute('aria-label');
+      if (content.textContent !== text) content.textContent = text;
+    }
 
+    if (countEl.textContent !== String(key)) countEl.textContent = key;
     announce(key);
+  }
+
+  function render() {
+    var cw = box.clientWidth - padX;
+    var ch = box.clientHeight - padY;
+    var obstacles = getAppleObstacles();
+
+    if (cw <= 0 || ch <= 0) {
+      showResult(-1, obstacles.length ? [] : null);
+      return;
+    }
+
+    if (obstacles.length) {
+      var result = findBestFlow(cw, buildFlowBands(cw, ch, obstacles));
+      showResult(result.index, result.lines);
+    } else {
+      showResult(findBestFit(cw, ch), null);
+    }
   }
 
   // Announce only once the resize settles, so a drag is not read out frame
@@ -611,6 +806,167 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   if (typeof ResizeObserver === 'function') {
     new ResizeObserver(queueRender).observe(box);
   }
+
+  /* --------------------------------------------------------------- apples */
+
+  function getAppleObstacles() {
+    if (!apples.length) return [];
+
+    var rect = content.getBoundingClientRect();
+    var obstacles = [];
+    for (var i = 0; i < apples.length; i++) {
+      var apple = apples[i];
+      if (apple.x + APPLE_WRAP_RADIUS <= rect.left ||
+          apple.x - APPLE_WRAP_RADIUS >= rect.right ||
+          apple.y + APPLE_WRAP_RADIUS <= rect.top ||
+          apple.y - APPLE_WRAP_RADIUS >= rect.bottom) continue;
+
+      obstacles.push({
+        cx: apple.x - rect.left,
+        cy: apple.y - rect.top,
+        r: APPLE_WRAP_RADIUS
+      });
+    }
+    return obstacles;
+  }
+
+  function positionApple(apple) {
+    apple.el.style.transform =
+      'translate3d(' + Math.round(apple.x - APPLE_RADIUS) + 'px,' +
+      Math.round(apple.y - APPLE_RADIUS) + 'px,0) rotate(' +
+      apple.angle.toFixed(1) + 'deg)';
+  }
+
+  var appleFrame = 0;
+  var lastAppleTime = 0;
+
+  function wakeApples() {
+    if (!apples.length) return;
+    for (var i = 0; i < apples.length; i++) apples[i].sleeping = false;
+    if (!appleFrame) {
+      lastAppleTime = 0;
+      appleFrame = requestAnimationFrame(animateApples);
+    }
+  }
+
+  function animateApples(now) {
+    var dt = lastAppleTime ? Math.min((now - lastAppleTime) / 1000, 0.025) : 0;
+    lastAppleTime = now;
+    var water = content.getBoundingClientRect();
+    var moving = false;
+
+    for (var i = apples.length - 1; i >= 0; i--) {
+      var apple = apples[i];
+      if (apple.sleeping) continue;
+      moving = true;
+
+      var overWater = apple.x > water.left && apple.x < water.right;
+      var submerged = overWater
+        ? clamp((apple.y + APPLE_RADIUS - water.top) / APPLE_SIZE, 0, 1)
+        : 0;
+      var acceleration = GRAVITY;
+
+      if (submerged > 0 && apple.y - APPLE_RADIUS < water.bottom) {
+        // Archimedes in miniature: displaced water pushes upward, while drag
+        // opposes the current motion. Both forces ramp up smoothly as the apple
+        // crosses the surface, producing a plunge and a damped rebound.
+        acceleration -= BUOYANCY * submerged;
+        acceleration -= apple.velocity * WATER_DRAG * submerged;
+        apple.spin *= Math.exp(-3 * submerged * dt);
+      }
+
+      apple.velocity += acceleration * dt;
+      apple.y += apple.velocity * dt;
+      apple.angle += apple.spin * dt;
+
+      if (overWater && apple.y + APPLE_RADIUS > water.bottom) {
+        apple.y = water.bottom - APPLE_RADIUS;
+        if (apple.velocity > 0) apple.velocity *= -0.18;
+      }
+
+      var restingY = water.top - APPLE_RADIUS +
+        APPLE_SIZE * (GRAVITY / BUOYANCY);
+      if (overWater && submerged > 0 &&
+          Math.abs(apple.y - restingY) < 0.35 &&
+          Math.abs(apple.velocity) < 3) {
+        apple.y = restingY;
+        apple.velocity = 0;
+        apple.spin = 0;
+        apple.sleeping = true;
+      }
+
+      positionApple(apple);
+
+      if (apple.y - APPLE_RADIUS > window.innerHeight + APPLE_SIZE) {
+        apple.el.remove();
+        apples.splice(i, 1);
+      }
+    }
+
+    // The obstacle geometry changes with every physics step, so wrapping and
+    // the selected character budget are recomputed in the same animation frame.
+    render();
+
+    if (moving && apples.some(function (apple) { return !apple.sleeping; })) {
+      appleFrame = requestAnimationFrame(animateApples);
+    } else {
+      appleFrame = 0;
+      lastAppleTime = 0;
+    }
+  }
+
+  function dropApple() {
+    var rect = content.getBoundingClientRect();
+    var minX = rect.left + APPLE_RADIUS;
+    var maxX = rect.right - APPLE_RADIUS;
+    var x = maxX > minX ? minX + Math.random() * (maxX - minX) : rect.left + rect.width / 2;
+    var el = document.createElement('span');
+    var apple = {
+      el: el,
+      x: x,
+      y: -APPLE_RADIUS - 4 - Math.random() * 18,
+      velocity: 0,
+      angle: -18 + Math.random() * 36,
+      spin: -80 + Math.random() * 160,
+      sleeping: false
+    };
+
+    el.className = 'apple';
+    el.setAttribute('aria-hidden', 'true');
+    el.textContent = '🍎';
+    document.body.appendChild(el);
+    apples.push(apple);
+    positionApple(apple);
+
+    if (!appleFrame) appleFrame = requestAnimationFrame(animateApples);
+  }
+
+  // Distinguish a tap/click from a resize drag so grabbing a handle does not
+  // accidentally rain apples. The release can be retargeted by pointer capture,
+  // hence the window-level listeners.
+  var tapStarts = Object.create(null);
+  window.addEventListener('pointerdown', function (e) {
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    tapStarts[e.pointerId] = { x: e.clientX, y: e.clientY, moved: false };
+  }, true);
+
+  window.addEventListener('pointermove', function (e) {
+    var tap = tapStarts[e.pointerId];
+    if (!tap || tap.moved) return;
+    var dx = e.clientX - tap.x;
+    var dy = e.clientY - tap.y;
+    if (dx * dx + dy * dy > 100) tap.moved = true;
+  }, true);
+
+  window.addEventListener('pointerup', function (e) {
+    var tap = tapStarts[e.pointerId];
+    delete tapStarts[e.pointerId];
+    if (tap && !tap.moved) dropApple();
+  }, true);
+
+  window.addEventListener('pointercancel', function (e) {
+    delete tapStarts[e.pointerId];
+  }, true);
 
   /* ------------------------------------------------------------ dragging */
 

@@ -1,6 +1,6 @@
 export {
   layout,
+  layoutNextLine,
   measureNaturalWidth,
-  prepare,
   prepareWithSegments
 } from '@chenglou/pretext';
