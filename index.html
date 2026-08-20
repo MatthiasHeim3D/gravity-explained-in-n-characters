@@ -240,15 +240,15 @@ html.no-select, html.no-select * { user-select: none; -webkit-user-select: none;
   top: 0;
   left: 0;
   z-index: 10;
-  width: 44px;
-  height: 44px;
+  width: var(--object-size, 44px);
+  height: var(--object-size, 44px);
   cursor: grab;
   pointer-events: auto;
   touch-action: none;
   user-select: none;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-  font-size: 40px;
-  line-height: 44px;
+  font-size: var(--object-font-size, 40px);
+  line-height: var(--object-size, 44px);
   text-align: center;
   filter: drop-shadow(0 4px 3px rgba(28, 25, 23, .2));
   will-change: transform;
@@ -405,7 +405,7 @@ html:not(.has-interacted) .handle::before {
 
 <header class="masthead">
   <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
-  <p class="hint" id="hint">Tap or click anywhere to drop an apple. Drag apples, or drag the vessel’s top or sides to resize.</p>
+  <p class="hint" id="hint">Tap or click anywhere to drop an apple or stone. Drag objects, or drag the vessel’s top or sides to resize.</p>
   <a class="github-link" href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener" aria-label="View source on GitHub">
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
   </a>
@@ -489,18 +489,17 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var apples = [];
 
   var APPLE_SIZE = 44;
-  var APPLE_RADIUS = APPLE_SIZE / 2;
-  var APPLE_WRAP_RADIUS = APPLE_RADIUS + 5;
   var APPLE_COLLISION_RADIUS = 19.5;
   var EARTH_GRAVITY = 9.80665;       // m/s², standard gravity
   var APPLE_MASS_KG = 0.18;          // a medium 180 g apple
   var APPLE_RADIUS_METERS = 0.04;    // 8 cm physical diameter
+  var STONE_DENSITY = 2700;          // kg/m³, typical solid rock
+  var STONE_DROP_CHANCE = 0.25;
+  var STONE_MIN_SCALE = 0.5;
+  var STONE_MAX_SCALE = 2;
   var WATER_DENSITY = 1000;          // kg/m³ at ordinary conditions
   var WATER_DRAG_COEFFICIENT = 0.47; // sphere approximation
   var PIXELS_PER_METER = APPLE_COLLISION_RADIUS / APPLE_RADIUS_METERS;
-  var APPLE_VOLUME_M3 = 4 / 3 * Math.PI * Math.pow(APPLE_RADIUS_METERS, 3);
-  var APPLE_AREA_M2 = Math.PI * Math.pow(APPLE_RADIUS_METERS, 2);
-  var APPLE_FIXTURE_DENSITY = APPLE_MASS_KG / APPLE_AREA_M2;
   var PHYSICS_STEP = 1 / 120;
   var WALL_THICKNESS = 24;
 
@@ -850,15 +849,15 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var obstacles = [];
     for (var i = 0; i < apples.length; i++) {
       var apple = apples[i];
-      if (apple.x + APPLE_WRAP_RADIUS <= rect.left ||
-          apple.x - APPLE_WRAP_RADIUS >= rect.right ||
-          apple.y + APPLE_WRAP_RADIUS <= rect.top ||
-          apple.y - APPLE_WRAP_RADIUS >= rect.bottom) continue;
+      if (apple.x + apple.wrapRadius <= rect.left ||
+          apple.x - apple.wrapRadius >= rect.right ||
+          apple.y + apple.wrapRadius <= rect.top ||
+          apple.y - apple.wrapRadius >= rect.bottom) continue;
 
       obstacles.push({
         cx: apple.x - rect.left,
         cy: apple.y - rect.top,
-        r: APPLE_WRAP_RADIUS
+        r: apple.wrapRadius
       });
     }
     return obstacles;
@@ -866,8 +865,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   function positionApple(apple) {
     apple.el.style.transform =
-      'translate3d(' + Math.round(apple.x - APPLE_RADIUS) + 'px,' +
-      Math.round(apple.y - APPLE_RADIUS) + 'px,0) rotate(' +
+      'translate3d(' + Math.round(apple.x - apple.visualRadius) + 'px,' +
+      Math.round(apple.y - apple.visualRadius) + 'px,0) rotate(' +
       apple.angle.toFixed(1) + 'deg)';
   }
 
@@ -1095,16 +1094,23 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       e.preventDefault();
       e.stopPropagation();
 
-      var target = Physics.Vec2(e.clientX / PIXELS_PER_METER, e.clientY / PIXELS_PER_METER);
+      var pointer = Physics.Vec2(e.clientX / PIXELS_PER_METER, e.clientY / PIXELS_PER_METER);
+      var center = apple.body.getWorldCenter();
       var joint = new Physics.MouseJoint({
         maxForce: apple.body.getMass() * 300,
         frequencyHz: 7,
         dampingRatio: 0.88
-      }, dragAnchorBody, apple.body, target);
+      }, dragAnchorBody, apple.body, center);
       physicsWorld.createJoint(joint);
-      activeDrags[e.pointerId] = { apple: apple, joint: joint };
+      activeDrags[e.pointerId] = {
+        apple: apple,
+        joint: joint,
+        offsetX: center.x - pointer.x,
+        offsetY: center.y - pointer.y
+      };
       apple.dragPointer = e.pointerId;
       apple.el.classList.add('is-dragging');
+      apple.body.setAngularVelocity(0);
       apple.body.setAwake(true);
       ensureAppleFrame();
       try { apple.el.setPointerCapture(e.pointerId); } catch (err) {}
@@ -1115,8 +1121,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       if (!drag || drag.apple !== apple) return;
       e.preventDefault();
       drag.joint.setTarget(Physics.Vec2(
-        e.clientX / PIXELS_PER_METER,
-        e.clientY / PIXELS_PER_METER
+        e.clientX / PIXELS_PER_METER + drag.offsetX,
+        e.clientY / PIXELS_PER_METER + drag.offsetY
       ));
       apple.body.setAwake(true);
       ensureAppleFrame();
@@ -1193,7 +1199,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   function applyWaterForces(water, vessel) {
     for (var i = 0; i < apples.length; i++) {
-      var body = apples[i].body;
+      var apple = apples[i];
+      var body = apple.body;
       if (!body.isAwake()) continue;
 
       var position = body.getPosition();
@@ -1202,24 +1209,24 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       var overWater = x > vessel.left && x < vessel.right;
       var submergedDepth = overWater
         ? clamp(
-            position.y + APPLE_RADIUS_METERS - water.top / PIXELS_PER_METER,
+            position.y + apple.radiusMeters - water.top / PIXELS_PER_METER,
             0,
-            APPLE_RADIUS_METERS * 2
+            apple.radiusMeters * 2
           )
         : 0;
       // Exact volume fraction of a submerged spherical cap.
       var submerged = Math.pow(submergedDepth, 2) *
-        (3 * APPLE_RADIUS_METERS - submergedDepth) /
-        (4 * Math.pow(APPLE_RADIUS_METERS, 3));
+        (3 * apple.radiusMeters - submergedDepth) /
+        (4 * Math.pow(apple.radiusMeters, 3));
 
-      if (submerged > 0 && y - APPLE_RADIUS < vessel.bottom) {
+      if (submerged > 0 && y - apple.visualRadius < vessel.bottom) {
         var velocity = body.getLinearVelocity();
         var speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
         var buoyancyForce = WATER_DENSITY * EARTH_GRAVITY *
-          APPLE_VOLUME_M3 * submerged;
+          apple.volumeM3 * submerged;
         var dragForce = speed > 0
           ? 0.5 * WATER_DENSITY * WATER_DRAG_COEFFICIENT *
-            APPLE_AREA_M2 * speed * speed * submerged
+            apple.areaM2 * speed * speed * submerged
           : 0;
         body.applyForceToCenter(Physics.Vec2(
           speed > 0 ? -dragForce * velocity.x / speed : 0,
@@ -1235,8 +1242,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   function checkForSplash(apple, water, vessel, now) {
     var overWater = apple.x > vessel.left && apple.x < vessel.right;
     var touchesWater = overWater &&
-      apple.y + APPLE_COLLISION_RADIUS >= water.top &&
-      apple.y - APPLE_COLLISION_RADIUS < vessel.bottom;
+      apple.y + apple.collisionRadius >= water.top &&
+      apple.y - apple.collisionRadius < vessel.bottom;
 
     if (touchesWater && !apple.inWater) {
       var downwardSpeed = apple.body.getLinearVelocity().y;
@@ -1246,8 +1253,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       }
       apple.inWater = true;
     } else if (!overWater ||
-        apple.y + APPLE_COLLISION_RADIUS < water.top - 4 ||
-        apple.y - APPLE_COLLISION_RADIUS > vessel.bottom) {
+        apple.y + apple.collisionRadius < water.top - 4 ||
+        apple.y - apple.collisionRadius > vessel.bottom) {
       apple.inWater = false;
     }
   }
@@ -1276,7 +1283,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
       // Spilled apples have no floor outside the vessel. Once their top has
       // crossed the viewport floor they are gone, both visually and physically.
-      if (apple.y - APPLE_RADIUS > window.innerHeight) {
+      if (apple.y - apple.visualRadius > window.innerHeight) {
         removeApple(apple, i);
       }
     }
@@ -1295,11 +1302,24 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   function dropApple() {
     var rect = content.getBoundingClientRect();
-    var minX = rect.left + APPLE_RADIUS;
-    var maxX = rect.right - APPLE_RADIUS;
+    var isStone = Math.random() < STONE_DROP_CHANCE;
+    var sizeScale = isStone
+      ? STONE_MIN_SCALE + Math.random() * (STONE_MAX_SCALE - STONE_MIN_SCALE)
+      : 1;
+    var visualSize = APPLE_SIZE * sizeScale;
+    var visualRadius = visualSize / 2;
+    var collisionRadius = APPLE_COLLISION_RADIUS * sizeScale;
+    var radiusMeters = APPLE_RADIUS_METERS * sizeScale;
+    var areaM2 = Math.PI * Math.pow(radiusMeters, 2);
+    var volumeM3 = 4 / 3 * Math.PI * Math.pow(radiusMeters, 3);
+    var massKg = isStone ? STONE_DENSITY * volumeM3 : APPLE_MASS_KG;
+    // Planck is two-dimensional, so fixture density is mass per circle area.
+    var fixtureDensity = massKg / areaM2;
+    var minX = rect.left + visualRadius;
+    var maxX = rect.right - visualRadius;
     var x = maxX > minX ? minX + Math.random() * (maxX - minX) : rect.left + rect.width / 2;
     var el = document.createElement('span');
-    var y = -APPLE_RADIUS - 4 - Math.random() * 18;
+    var y = -visualRadius - 4 - Math.random() * 18;
     var angle = (-18 + Math.random() * 36) * Math.PI / 180;
     var body = physicsWorld.createDynamicBody({
       position: Physics.Vec2(x / PIXELS_PER_METER, y / PIXELS_PER_METER),
@@ -1308,8 +1328,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       linearDamping: 0.001,
       angularDamping: 0.04
     });
-    body.createFixture(new Physics.Circle(APPLE_RADIUS_METERS), {
-      density: APPLE_FIXTURE_DENSITY,
+    body.createFixture(new Physics.Circle(radiusMeters), {
+      density: fixtureDensity,
       friction: 0.38,
       restitution: 0.14
     });
@@ -1320,14 +1340,22 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       x: x,
       y: y,
       angle: angle * 180 / Math.PI,
+      visualRadius: visualRadius,
+      collisionRadius: collisionRadius,
+      wrapRadius: visualRadius + 5,
+      radiusMeters: radiusMeters,
+      volumeM3: volumeM3,
+      areaM2: areaM2,
       dragPointer: null,
       inWater: false,
       lastSplash: -Infinity
     };
 
-    el.className = 'apple';
+    el.className = isStone ? 'apple stone' : 'apple';
     el.setAttribute('aria-hidden', 'true');
-    el.textContent = '🍎';
+    el.style.setProperty('--object-size', visualSize + 'px');
+    el.style.setProperty('--object-font-size', visualSize * 40 / APPLE_SIZE + 'px');
+    el.textContent = isStone ? '🪨' : '🍎';
     document.body.appendChild(el);
     apples.push(apple);
     makeAppleDraggable(apple);
