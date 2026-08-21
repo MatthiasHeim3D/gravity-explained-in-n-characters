@@ -231,6 +231,11 @@ body {
   overflow: hidden;
 }
 
+/* Every flowing line is placed from measured geometry, and the lowest of them
+   sits in the bowl's belly -- below the padded rectangle, still well inside the
+   water. Clipping to the rectangle would cut it off. */
+#boxContent.is-flowing { overflow: visible; }
+
 .text-line {
   position: absolute;
   display: block;
@@ -429,6 +434,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var LAKE_MIN_BANK = 34;     // a lake without a shore is a swimming pool
   var LAKE_MAX_BANK = 130;
   var LAKE_MAX_WATER = 720;   // wide screens stop widening the water here
+  var BASIN_TEXT_CLEARANCE = 4;   // the gap kept between the lowest line and the bed
   var LAKE_CREST = 34;        // how far the bank climbs above the waterline
   var LAKE_CURVE_STEPS = 18;  // segments per bank, for the collider line
   var LAKE_SOIL = 13;         // depth of the green layer over the brown
@@ -1195,17 +1201,33 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     announce(key);
   }
 
-  // The basin's two rising corners, as obstacles in the text's own
-  // coordinates. Splitting them at the centre line is what leaves the middle
-  // of each low line free: one polygon spanning the whole floor would report a
-  // single interval and blank the row entirely.
-  function basinObstacles(cw, ch) {
-    var rise = basinRise(box.clientWidth, box.clientHeight - content.offsetTop);
-    var floorBottom = ch + (padY - content.offsetTop);   // box bottom, in text space
-    if (rise <= floorBottom - ch) return [];             // the bowl stays clear of the text
+  // The basin as obstacles in the text's own coordinates: the floor curve
+  // itself, lifted by a hair of clearance, split at the centre line.
+  // Splitting is what leaves the middle of each low line free: one polygon
+  // spanning the whole floor would report a single interval and blank the row
+  // entirely.
+  function basinFloor(ch) {
+    return {
+      rise: basinRise(box.clientWidth, box.clientHeight - content.offsetTop),
+      // The box's own bottom edge, in text space. The bottom padding is water:
+      // at the centre line the bed reaches no higher than this.
+      bottom: ch + (padY - content.offsetTop)
+    };
+  }
+
+  // How deep a line may sit. The belly of the bowl runs past the text
+  // rectangle, so the rows stop short of the bed rather than short of the
+  // padding -- which is what lets the lowest line follow the curve.
+  function basinTextBottom(ch, floor) {
+    return Math.max(ch, floor.bottom - BASIN_TEXT_CLEARANCE);
+  }
+
+  function basinObstacles(cw, floor) {
+    if (floor.rise <= 0) return [];
 
     var steps = 16;
     var half = cw / 2;
+    var deep = floor.bottom - BASIN_TEXT_CLEARANCE;
     var sides = [];
 
     for (var side = 0; side < 2; side++) {
@@ -1215,12 +1237,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         var x = side === 0 ? half * t : half + half * t;
         points.push({
           x: x,
-          y: floorBottom - basinLift(x + padX / 2, box.clientWidth, rise)
+          y: deep - basinLift(x + padX / 2, box.clientWidth, floor.rise)
         });
       }
-      points.push({ x: side === 0 ? half : cw, y: floorBottom + rise + 8 });
-      points.push({ x: side === 0 ? 0 : half, y: floorBottom + rise + 8 });
-      sides.push({ points: points, padding: 3 });
+      points.push({ x: side === 0 ? half : cw, y: floor.bottom + floor.rise + 8 });
+      points.push({ x: side === 0 ? 0 : half, y: floor.bottom + floor.rise + 8 });
+      sides.push({ points: points });
     }
     return sides;
   }
@@ -1228,7 +1250,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   function render() {
     var cw = box.clientWidth - padX;
     var ch = box.clientHeight - padY;
-    var obstacles = basinObstacles(cw, ch).concat(getAppleObstacles());
+    var floor = basinFloor(ch);
+    var basin = basinObstacles(cw, floor);
+    // Only the flowing layout knows about the curve, so only it may use the
+    // depth the curve opens up; the plain rectangle keeps to its own box.
+    var bottom = basin.length ? basinTextBottom(ch, floor) : ch;
+    var obstacles = basin.concat(getAppleObstacles(bottom));
 
     if (cw <= 0 || ch <= 0) {
       showResult(-1, obstacles.length ? [] : null);
@@ -1236,7 +1263,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     }
 
     if (obstacles.length) {
-      var result = findBestFlow(cw, buildFlowBands(cw, ch, obstacles));
+      var result = findBestFlow(cw, buildFlowBands(cw, bottom, obstacles));
       showResult(result.index, result.lines);
     } else {
       showResult(findBestFit(cw, ch), null);
@@ -1275,7 +1302,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   /* --------------------------------------------------------------- apples */
 
-  function getAppleObstacles() {
+  function getAppleObstacles(bottom) {
     if (!apples.length) return [];
 
     var rect = content.getBoundingClientRect();
@@ -1295,7 +1322,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
           maxY = Math.max(maxY, point.y);
         }
 
-        if (maxX <= 0 || minX >= rect.width || maxY <= 0 || minY >= rect.height) continue;
+        if (maxX <= 0 || minX >= rect.width || maxY <= 0 || minY >= bottom) continue;
         obstacles.push({ points: points });
       }
     }
