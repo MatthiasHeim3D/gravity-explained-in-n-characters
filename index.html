@@ -319,7 +319,7 @@ body {
 
 <header class="masthead">
   <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
-  <p class="hint" id="hint">Tap or click anywhere to drop an apple or stone into the lake. Drag them around, or let them sink.</p>
+  <p class="hint" id="hint">Tap or click anywhere to drop a duck, apple, or stone into the lake. Drag them around, or let them sink.</p>
   <a class="github-link" href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener" aria-label="View source on GitHub">
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
   </a>
@@ -444,15 +444,22 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var APPLE_MASS_KG = 0.18;          // a medium 180 g apple
   var APPLE_RADIUS_METERS = 0.04;    // 8 cm physical diameter
   var STONE_DENSITY = 2700;          // kg/m³, typical solid rock
+  var DUCK_MASS_KG = 0.95;            // a typical adult mallard
+  var DUCK_PHYSICAL_WIDTH = 0.50;     // roughly beak-to-tail length
+  var DUCK_HYDRO_RADIUS = 0.065;
+  var DUCK_VOLUME_M3 = 0.0018;
   var STONE_DROP_CHANCE = 0.25;
+  var DUCK_DROP_CHANCE = 0.15;
   var STONE_MIN_SCALE = 0.5;
   var STONE_MAX_SCALE = 2;
   var WATER_DENSITY = 1000;          // kg/m³ at ordinary conditions
   var WATER_DYNAMIC_VISCOSITY = 0.001; // Pa·s at about 20 °C
   var APPLE_DRAG_COEFFICIENT = 0.47; // approximately spherical
   var STONE_DRAG_COEFFICIENT = 0.8;  // irregular/bluff body
+  var DUCK_DRAG_COEFFICIENT = 0.6;
   var APPLE_ROTATIONAL_DRAG = 0.2;
   var STONE_ROTATIONAL_DRAG = 0.8;
+  var DUCK_ROTATIONAL_DRAG = 1.1;
   var AIR_LINEAR_DAMPING = 0.001;
   var AIR_ANGULAR_DAMPING = 0.001;
   var WATER_LINEAR_DAMPING = 2.5;
@@ -467,9 +474,11 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var PHYSICS_STEP = 1 / 120;
   var WALL_THICKNESS = 24;
 
-  // Visible bounds and eight-point hulls measured from the downloaded Noto
-  // Color Emoji PNG alpha channels. Apple hulls start at y=28 so the decorative
-  // leaf and stem remain visible without becoming load-bearing collision parts.
+  // Visible bounds and convex hulls measured from the downloaded Noto Color
+  // Emoji SVG alpha. Apple hulls start at y=28 so the decorative leaf and stem
+  // remain visible without becoming load-bearing collision parts. The duck is
+  // compound so its neck and beak do not turn the transparent space into a
+  // solid collider.
   var NOTO_EMOJI = {
     redApple: {
       src: 'assets/noto-color-emoji/red-apple.svg',
@@ -485,6 +494,19 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       src: 'assets/noto-color-emoji/rock.svg',
       bounds: { x: 6, y: 7, width: 112, height: 116 },
       hull: [[19,46], [59,12], [84,8], [112,52], [117,98], [74,122], [24,114], [6,85]]
+    },
+    duck: {
+      src: 'assets/noto-color-emoji/duck.svg',
+      bounds: { x: 7, y: 4, width: 109, height: 96 },
+      hulls: [
+        [[26,63], [37,45], [109,45], [114,52], [115,67], [109,82],
+         [95,94], [74,99], [57,99], [44,96], [30,86], [26,77]],
+        [[28,16], [35,8], [43,4], [54,4], [60,7], [65,13],
+         [67,25], [61,40], [40,40], [28,30]],
+        [[35,30], [62,30], [59,54], [52,59], [39,57], [33,50]],
+        [[7,22], [8,21], [10,20], [28,16], [30,16], [31,17],
+         [32,30], [19,30], [15,29], [12,28], [8,26], [7,25]]
+      ]
     }
   };
 
@@ -503,34 +525,44 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var physicsDebugEnabled = false;
   var physicsDebugAllowed = !/(^|\.)gitlab\.io$/i.test(window.location.hostname) &&
     window.location.hostname.toLowerCase() !== 'matthiasheim3d.github.io';
+  var firstSpawn = true;
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
   function makeCollisionHull(asset, physicalWidth) {
-    var profile = asset.hull;
+    var profiles = asset.hulls || [asset.hull];
     var metersPerSourcePixel = physicalWidth / asset.bounds.width;
     var originX = asset.bounds.x + asset.bounds.width / 2;
     var originY = asset.bounds.y + asset.bounds.height / 2;
-    var twiceArea = 0;
-    for (var i = 0; i < profile.length; i++) {
-      var current = profile[i];
-      var next = profile[(i + 1) % profile.length];
-      var cross = current[0] * next[1] - next[0] * current[1];
-      twiceArea += cross;
-    }
+    var totalArea = 0;
+    var minY = Infinity;
+    var maxY = -Infinity;
+    var hulls = [];
 
-    return {
-      area: Math.abs(twiceArea) * metersPerSourcePixel * metersPerSourcePixel / 2,
-      vertices: profile.map(function (point) {
+    for (var h = 0; h < profiles.length; h++) {
+      var profile = profiles[h];
+      var twiceArea = 0;
+      for (var i = 0; i < profile.length; i++) {
+        var current = profile[i];
+        var next = profile[(i + 1) % profile.length];
+        twiceArea += current[0] * next[1] - next[0] * current[1];
+        minY = Math.min(minY, current[1]);
+        maxY = Math.max(maxY, current[1]);
+      }
+      totalArea += Math.abs(twiceArea) * metersPerSourcePixel * metersPerSourcePixel / 2;
+      hulls.push(profile.map(function (point) {
         return Physics.Vec2(
           (point[0] - originX) * metersPerSourcePixel,
           (point[1] - originY) * metersPerSourcePixel
         );
-      }),
-      top: (originY - Math.min.apply(null, profile.map(function (point) { return point[1]; }))) *
-        metersPerSourcePixel * PIXELS_PER_METER,
-      bottom: (Math.max.apply(null, profile.map(function (point) { return point[1]; })) - originY) *
-        metersPerSourcePixel * PIXELS_PER_METER
+      }));
+    }
+
+    return {
+      area: totalArea,
+      hulls: hulls,
+      top: (originY - minY) * metersPerSourcePixel * PIXELS_PER_METER,
+      bottom: (maxY - originY) * metersPerSourcePixel * PIXELS_PER_METER
     };
   }
 
@@ -928,16 +960,20 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     return clipped;
   }
 
-  function collisionHullInPixels(apple, offsetX, offsetY) {
-    var points = [];
-    for (var i = 0; i < apple.collisionVertices.length; i++) {
-      var worldPoint = apple.body.getWorldPoint(apple.collisionVertices[i]);
-      points.push({
-        x: worldPoint.x * PIXELS_PER_METER - (offsetX || 0),
-        y: worldPoint.y * PIXELS_PER_METER - (offsetY || 0)
-      });
+  function collisionHullsInPixels(apple, offsetX, offsetY) {
+    var hulls = [];
+    for (var h = 0; h < apple.collisionHulls.length; h++) {
+      var points = [];
+      for (var i = 0; i < apple.collisionHulls[h].length; i++) {
+        var worldPoint = apple.body.getWorldPoint(apple.collisionHulls[h][i]);
+        points.push({
+          x: worldPoint.x * PIXELS_PER_METER - (offsetX || 0),
+          y: worldPoint.y * PIXELS_PER_METER - (offsetY || 0)
+        });
+      }
+      hulls.push(points);
     }
-    return points;
+    return hulls;
   }
 
   // Move every vertex exactly `distance` pixels along the average of its two
@@ -1227,25 +1263,22 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var obstacles = [];
     for (var i = 0; i < apples.length; i++) {
       var apple = apples[i];
-      var points = offsetHullAlongVertexNormals(
-        collisionHullInPixels(apple, rect.left, rect.top),
-        TEXT_HULL_OFFSET
-      );
-      var minX = Infinity, minY = Infinity;
-      var maxX = -Infinity, maxY = -Infinity;
-      for (var j = 0; j < points.length; j++) {
-        var point = points[j];
-        minX = Math.min(minX, point.x);
-        maxX = Math.max(maxX, point.x);
-        minY = Math.min(minY, point.y);
-        maxY = Math.max(maxY, point.y);
+      var hulls = collisionHullsInPixels(apple, rect.left, rect.top);
+      for (var h = 0; h < hulls.length; h++) {
+        var points = offsetHullAlongVertexNormals(hulls[h], TEXT_HULL_OFFSET);
+        var minX = Infinity, minY = Infinity;
+        var maxX = -Infinity, maxY = -Infinity;
+        for (var j = 0; j < points.length; j++) {
+          var point = points[j];
+          minX = Math.min(minX, point.x);
+          maxX = Math.max(maxX, point.x);
+          minY = Math.min(minY, point.y);
+          maxY = Math.max(maxY, point.y);
+        }
+
+        if (maxX <= 0 || minX >= rect.width || maxY <= 0 || minY >= rect.height) continue;
+        obstacles.push({ points: points });
       }
-
-      if (maxX <= 0 || minX >= rect.width || maxY <= 0 || minY >= rect.height) continue;
-
-      obstacles.push({
-        points: points
-      });
     }
     return obstacles;
   }
@@ -1577,7 +1610,9 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       var apple = apples[i];
       var isStone = apple.el.classList.contains('stone');
       var isGreen = apple.el.classList.contains('green-apple');
-      var color = isStone ? '161, 98, 7' : (isGreen ? '22, 163, 74' : '225, 29, 72');
+      var isDuck = apple.el.classList.contains('duck');
+      var color = isDuck ? '8, 145, 178' :
+        (isStone ? '161, 98, 7' : (isGreen ? '22, 163, 74' : '225, 29, 72'));
 
       // The dotted rectangle is the alpha-measured SVG box; the solid polygon
       // is the actual collision fixture, transformed by the Planck body.
@@ -1591,37 +1626,40 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         apple.visualWidth, apple.visualHeight);
       ctx.restore();
 
-      var collisionPoints = collisionHullInPixels(apple, 0, 0);
-      ctx.beginPath();
-      for (var j = 0; j < collisionPoints.length; j++) {
-        if (j === 0) ctx.moveTo(collisionPoints[j].x, collisionPoints[j].y);
-        else ctx.lineTo(collisionPoints[j].x, collisionPoints[j].y);
-      }
-      ctx.closePath();
-      ctx.setLineDash([]);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = 'rgba(' + color + ', .95)';
-      ctx.fillStyle = 'rgba(' + color + ', .11)';
-      ctx.fill();
-      ctx.stroke();
-
-      var textHull = offsetHullAlongVertexNormals(collisionPoints, TEXT_HULL_OFFSET);
-      ctx.beginPath();
-      for (j = 0; j < textHull.length; j++) {
-        if (j === 0) ctx.moveTo(textHull[j].x, textHull[j].y);
-        else ctx.lineTo(textHull[j].x, textHull[j].y);
-      }
-      ctx.closePath();
-      ctx.setLineDash([4, 3]);
-      ctx.lineWidth = 1.25;
-      ctx.strokeStyle = 'rgba(168, 85, 247, .95)';
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(168, 85, 247, .95)';
-      for (j = 0; j < textHull.length; j++) {
+      var collisionHulls = collisionHullsInPixels(apple, 0, 0);
+      for (var h = 0; h < collisionHulls.length; h++) {
+        var collisionPoints = collisionHulls[h];
         ctx.beginPath();
-        ctx.arc(textHull[j].x, textHull[j].y, 1.75, 0, Math.PI * 2);
+        for (var j = 0; j < collisionPoints.length; j++) {
+          if (j === 0) ctx.moveTo(collisionPoints[j].x, collisionPoints[j].y);
+          else ctx.lineTo(collisionPoints[j].x, collisionPoints[j].y);
+        }
+        ctx.closePath();
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(' + color + ', .95)';
+        ctx.fillStyle = 'rgba(' + color + ', .11)';
         ctx.fill();
+        ctx.stroke();
+
+        var textHull = offsetHullAlongVertexNormals(collisionPoints, TEXT_HULL_OFFSET);
+        ctx.beginPath();
+        for (j = 0; j < textHull.length; j++) {
+          if (j === 0) ctx.moveTo(textHull[j].x, textHull[j].y);
+          else ctx.lineTo(textHull[j].x, textHull[j].y);
+        }
+        ctx.closePath();
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = 'rgba(168, 85, 247, .95)';
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(168, 85, 247, .95)';
+        for (j = 0; j < textHull.length; j++) {
+          ctx.beginPath();
+          ctx.arc(textHull[j].x, textHull[j].y, 1.75, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       var center = apple.body.getWorldCenter();
@@ -1731,12 +1769,15 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       if (!body.isAwake()) continue;
 
       var position = body.getPosition();
-      var x = position.x * PIXELS_PER_METER;
+      var volumeCenter = apple.buoyancyVolumeCenter
+        ? body.getWorldPoint(apple.buoyancyVolumeCenter)
+        : position;
+      var x = volumeCenter.x * PIXELS_PER_METER;
       var y = position.y * PIXELS_PER_METER;
       var overWater = x > vessel.left && x < vessel.right;
       var submergedDepth = overWater
         ? clamp(
-            position.y + apple.radiusMeters - water.top / PIXELS_PER_METER,
+            volumeCenter.y + apple.radiusMeters - water.top / PIXELS_PER_METER,
             0,
             apple.radiusMeters * 2
           )
@@ -1769,8 +1810,18 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         dragForce = Math.min(dragForce, body.getMass() * speed / PHYSICS_STEP);
         body.applyForceToCenter(Physics.Vec2(
           speed > 0 ? -dragForce * relativeX / speed : 0,
-          -buoyancyForce + (speed > 0 ? -dragForce * relativeY / speed : 0)
+          speed > 0 ? -dragForce * relativeY / speed : 0
         ), false);
+        var buoyancyVector = Physics.Vec2(0, -buoyancyForce);
+        if (apple.buoyancyForcePoint) {
+          body.applyForce(
+            buoyancyVector,
+            body.getWorldPoint(apple.buoyancyForcePoint),
+            false
+          );
+        } else {
+          body.applyForceToCenter(buoyancyVector, false);
+        }
 
         var angularVelocity = body.getAngularVelocity();
         var radiusCubed = Math.pow(apple.radiusMeters, 3);
@@ -1852,22 +1903,35 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   function dropApple() {
     var rect = content.getBoundingClientRect();
-    var isStone = Math.random() < STONE_DROP_CHANCE;
+    var typeRoll = Math.random();
+    var isDuck = firstSpawn || typeRoll < DUCK_DROP_CHANCE;
+    var isStone = !isDuck &&
+      typeRoll < DUCK_DROP_CHANCE + STONE_DROP_CHANCE;
+    firstSpawn = false;
     var sizeScale = isStone
       ? STONE_MIN_SCALE + Math.random() * (STONE_MAX_SCALE - STONE_MIN_SCALE)
       : 1;
-    var assetName = isStone
+    var assetName = isDuck ? 'duck' : (isStone
       ? 'rock'
-      : (Math.random() < 0.5 ? 'redApple' : 'greenApple');
+      : (Math.random() < 0.5 ? 'redApple' : 'greenApple'));
     var asset = NOTO_EMOJI[assetName];
-    var sourceToScreen = APPLE_COLLISION_RADIUS * 2 * sizeScale / asset.bounds.width;
+    var physicalWidth = isDuck
+      ? DUCK_PHYSICAL_WIDTH
+      : APPLE_RADIUS_METERS * 2 * sizeScale;
+    var sourceToScreen = physicalWidth * PIXELS_PER_METER / asset.bounds.width;
     var visualWidth = asset.bounds.width * sourceToScreen;
     var visualHeight = asset.bounds.height * sourceToScreen;
     var visualRadius = Math.max(visualWidth, visualHeight) / 2;
-    var radiusMeters = APPLE_RADIUS_METERS * sizeScale;
-    var volumeM3 = 4 / 3 * Math.PI * Math.pow(radiusMeters, 3);
-    var massKg = isStone ? STONE_DENSITY * volumeM3 : APPLE_MASS_KG;
-    var collision = makeCollisionHull(asset, radiusMeters * 2);
+    var radiusMeters = isDuck
+      ? DUCK_HYDRO_RADIUS
+      : APPLE_RADIUS_METERS * sizeScale;
+    var volumeM3 = isDuck
+      ? DUCK_VOLUME_M3
+      : 4 / 3 * Math.PI * Math.pow(radiusMeters, 3);
+    var massKg = isDuck
+      ? DUCK_MASS_KG
+      : (isStone ? STONE_DENSITY * volumeM3 : APPLE_MASS_KG);
+    var collision = makeCollisionHull(asset, physicalWidth);
     // Planck is two-dimensional, so fixture density is mass per hull area.
     var fixtureDensity = massKg / collision.area;
     var minX = rect.left + visualWidth / 2;
@@ -1876,7 +1940,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var el = document.createElement('span');
     var image = document.createElement('img');
     var y = -visualHeight / 2 - 4 - Math.random() * 18;
-    var angle = (-18 + Math.random() * 36) * Math.PI / 180;
+    var angleRange = isDuck ? 8 : 18;
+    var angle = (-angleRange + Math.random() * angleRange * 2) * Math.PI / 180;
     var body = physicsWorld.createDynamicBody({
       position: Physics.Vec2(x / PIXELS_PER_METER, y / PIXELS_PER_METER),
       angle: angle,
@@ -1884,12 +1949,38 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       linearDamping: AIR_LINEAR_DAMPING,
       angularDamping: AIR_ANGULAR_DAMPING
     });
-    body.createFixture(new Physics.Polygon(collision.vertices), {
-      density: fixtureDensity,
-      friction: 0.38,
-      restitution: 0.14
-    });
-    body.setAngularVelocity((-80 + Math.random() * 160) * Math.PI / 180);
+    for (var h = 0; h < collision.hulls.length; h++) {
+      body.createFixture(new Physics.Polygon(collision.hulls[h]), {
+        density: fixtureDensity,
+        friction: isDuck ? 0.28 : 0.38,
+        restitution: isDuck ? 0.06 : 0.14
+      });
+    }
+
+    var buoyancyVolumeCenter = null;
+    var buoyancyForcePoint = null;
+    if (isDuck) {
+      // A mallard-sized body with its centre of mass low in the breast. Applying
+      // buoyancy above that point makes a tipped duck right itself naturally.
+      var duckCenterOfMass = Physics.Vec2(0.055, 0.115);
+      var physicalHeight = physicalWidth * asset.bounds.height / asset.bounds.width;
+      var centeredInertia = massKg *
+        (physicalWidth * physicalWidth + physicalHeight * physicalHeight) / 12;
+      body.setMassData({
+        mass: massKg,
+        center: duckCenterOfMass,
+        I: centeredInertia + massKg *
+          (duckCenterOfMass.x * duckCenterOfMass.x +
+           duckCenterOfMass.y * duckCenterOfMass.y)
+      });
+      buoyancyVolumeCenter = Physics.Vec2(0.055, 0.110);
+      buoyancyForcePoint = Physics.Vec2(0.055, 0.055);
+    }
+
+    var angularSpeedRange = isDuck ? 20 : 80;
+    body.setAngularVelocity(
+      (-angularSpeedRange + Math.random() * angularSpeedRange * 2) * Math.PI / 180
+    );
     var apple = {
       el: el,
       body: body,
@@ -1901,18 +1992,22 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       visualRadius: visualRadius,
       collisionTop: collision.top,
       collisionBottom: collision.bottom,
-      collisionVertices: collision.vertices,
+      collisionHulls: collision.hulls,
       radiusMeters: radiusMeters,
       volumeM3: volumeM3,
-      dragCoefficient: isStone ? STONE_DRAG_COEFFICIENT : APPLE_DRAG_COEFFICIENT,
-      rotationalDragCoefficient: isStone ? STONE_ROTATIONAL_DRAG : APPLE_ROTATIONAL_DRAG,
+      buoyancyVolumeCenter: buoyancyVolumeCenter,
+      buoyancyForcePoint: buoyancyForcePoint,
+      dragCoefficient: isDuck ? DUCK_DRAG_COEFFICIENT :
+        (isStone ? STONE_DRAG_COEFFICIENT : APPLE_DRAG_COEFFICIENT),
+      rotationalDragCoefficient: isDuck ? DUCK_ROTATIONAL_DRAG :
+        (isStone ? STONE_ROTATIONAL_DRAG : APPLE_ROTATIONAL_DRAG),
       dragPointer: null,
       inWater: false,
       lastSplash: -Infinity
     };
 
-    el.className = 'apple ' + (isStone ? 'stone' :
-      (assetName === 'redApple' ? 'red-apple' : 'green-apple'));
+    el.className = 'apple ' + (isDuck ? 'duck' : (isStone ? 'stone' :
+      (assetName === 'redApple' ? 'red-apple' : 'green-apple')));
     el.setAttribute('aria-hidden', 'true');
     el.style.width = visualWidth + 'px';
     el.style.height = visualHeight + 'px';
