@@ -213,7 +213,7 @@ def chat(api_key, messages, retries=4):
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/matthiasheim3d/gravity-explained-in-n-characters",
+        "HTTP-Referer": "https://github.com/matthiasheim3d/buoyancy-explainer-doodle",
         "X-Title": "Buoyancy Explained in n Characters",
     }
 

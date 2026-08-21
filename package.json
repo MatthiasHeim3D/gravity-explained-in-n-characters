@@ -1,5 +1,5 @@
 {
-  "name": "gravity-explained-in-n-characters",
+  "name": "buoyancy-explainer-doodle",
   "private": true,
   "scripts": {
     "build:physics": "esbuild ./scripts/physics-entry.js --bundle --format=iife --global-name=Physics --minify --outfile=vendor/physics.js",
