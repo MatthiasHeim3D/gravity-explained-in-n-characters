@@ -66,6 +66,8 @@ Large language models have an incredible ability to stretch and squash language 
    - Tap or click anywhere to drop what the current line is about -- enough rocks to
      line the bed, then the fish, then the duck, then up to five apples.
    - Drag anything around, or let it sink; the text flows around whatever is in the water.
+   - Every drop is a step in the browser's history, so Back takes the lake to how it
+     stood before it, and Forward drops the same kinds again.
    - Resize the browser window to resize the lake. The explanation updates to fit.
    - Start over resets the lake and replays the run.
 

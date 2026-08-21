@@ -534,6 +534,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var preparedTexts = new Array(TEXTS.length);
   var flowLineEls = [];
   var apples = [];
+  var nextSpawnId = 0;    // stamped on each drop, so a step can be undone
 
   var LAKE_BED = 26;          // earth kept below the water, so it has a floor
   var LAKE_MIN_BANK = 34;     // a lake without a shore is a swimming pool
@@ -2166,6 +2167,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var apple = {
       el: el,
       body: body,
+      spawnId: nextSpawnId++,
       x: x,
       y: y,
       angle: angle * 180 / Math.PI,
@@ -2238,6 +2240,111 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var applesDropped = 0;
   var guideTimers = [];
 
+  // Each drop leaves a mark in the browser's own history, so Back walks the
+  // lake to how it stood before that drop: the objects it added are removed
+  // and the line above the water goes back to what it said. The marks are
+  // indices into guideStates; anything the browser hands back that is not one
+  // of ours -- an entry from before a reset, say -- lands on the opening state.
+  var guideStates = [];
+  var guideIndex = 0;
+  // pushState is refused in some browsers on file:// pages. The run works the
+  // same without it, minus the Back steps.
+  var historyWorks = true;
+
+  function guideSnapshot() {
+    return {
+      step: guideStep,
+      applesDropped: applesDropped,
+      spawnMark: nextSpawnId    // everything dropped later belongs to a later step
+    };
+  }
+
+  function markGuideState() {
+    if (!historyWorks) return;
+    guideIndex++;
+    guideStates.length = guideIndex;
+    guideStates[guideIndex] = guideSnapshot();
+    try {
+      history.pushState({ guideIndex: guideIndex }, '');
+    } catch (err) {
+      historyWorks = false;
+    }
+  }
+
+  function resetGuideHistory() {
+    guideIndex = 0;
+    guideStates = [guideSnapshot()];
+    if (!historyWorks) return;
+    try {
+      history.replaceState({ guideIndex: 0 }, '');
+    } catch (err) {
+      historyWorks = false;
+    }
+  }
+
+  // Put the lake and the line above it into one recorded state. The title is
+  // never returned to: the opening state is the first line, waiting for a tap.
+  function applyGuideState(state) {
+    var step = clamp(state.step, 1, GUIDE_STEPS.length);
+    var finished = step >= GUIDE_STEPS.length ||
+      state.applesDropped >= MAX_APPLES;
+
+    guideStep = finished ? GUIDE_STEPS.length : step;
+    applesDropped = state.applesDropped;
+    guideBusy = false;
+    guideTitle.classList.remove('is-visible');
+    setGuideLabel(finished ? '' : GUIDE_STEPS[step].label);
+    guideTap.classList.toggle('is-visible', !finished);
+    resetButton.classList.toggle('is-visible', finished);
+    queueRender();
+  }
+
+  // Forward again after a Back: the objects that step dropped are gone for
+  // good, so drop their kinds afresh. Returns how many it will add.
+  function replayDrop(from) {
+    var kind = GUIDE_STEPS[clamp(from.step, 0, GUIDE_STEPS.length - 1)].drop;
+    if (kind === 'rock') {
+      var count = rockCountForLake();
+      for (var i = 0; i < count; i++) {
+        guideDelay(function () { dropApple('rock'); }, i * ROCK_SPACING_MS);
+      }
+      return count;
+    }
+    if (!kind) return 0;
+    dropApple(kind);
+    return 1;
+  }
+
+  function goToGuideState(index) {
+    var target = guideStates[index];
+    var from = guideIndex;
+    guideIndex = index;
+    clearGuideTimers();
+
+    if (index > from) {
+      // The replayed drops belong to the state being moved to, so the ids they
+      // are about to take are booked out of every mark from here on.
+      var reserved = nextSpawnId;
+      for (var i = from; i < index; i++) reserved += replayDrop(guideStates[i]);
+      for (var j = index; j < guideStates.length; j++) {
+        if (guideStates[j].spawnMark < reserved) guideStates[j].spawnMark = reserved;
+      }
+    } else {
+      for (var k = apples.length - 1; k >= 0; k--) {
+        if (apples[k].spawnId >= target.spawnMark) removeApple(apples[k], k);
+      }
+    }
+
+    applyGuideState(target);
+  }
+
+  window.addEventListener('popstate', function (e) {
+    if (!guideStates.length) return;   // the title is still up; nothing recorded yet
+    var index = e.state && typeof e.state.guideIndex === 'number' ? e.state.guideIndex : 0;
+    if (!guideStates[index]) index = 0;
+    goToGuideState(index);
+  });
+
   function guideDelay(fn, ms) {
     var id = setTimeout(fn, ms);
     guideTimers.push(id);
@@ -2253,6 +2360,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   // the replacement in, so the two never cross-dissolve into each other.
   function setGuideLabel(text) {
     var showing = guideLabel.classList.contains('is-visible');
+    if (showing === !!text && guideLabel.textContent === text) return;
     if (!text) {
       guideLabel.classList.remove('is-visible');
       guideDelay(function () { guideLabel.textContent = ''; }, LABEL_FADE_MS);
@@ -2271,12 +2379,14 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   }
 
   // Rocks are dropped at random sizes, so the average one covers this much of
-  // the bed. The floor is a bowl and the rocks roll into it, which is what the
-  // packing factor allows for.
+  // the bed. The floor is a bowl and they roll down into it, so it takes rather
+  // more than one row's worth to leave no bare patches: the packing factor is
+  // what pays for the piling up and for the gaps between irregular stones.
+  var ROCK_PACKING = 0.68;
   function rockCountForLake() {
     var averageScale = (STONE_MIN_SCALE + STONE_MAX_SCALE) / 2;
     var rockWidth = APPLE_RADIUS_METERS * 2 * averageScale * PIXELS_PER_METER;
-    return clamp(Math.round(box.clientWidth / (rockWidth * 0.9)), 4, 24);
+    return clamp(Math.round(box.clientWidth / (rockWidth * ROCK_PACKING)), 6, 32);
   }
 
   function startGuide() {
@@ -2305,6 +2415,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       guideBusy = false;
       setGuideLabel(GUIDE_STEPS[1].label);
       guideTap.classList.add('is-visible');
+      resetGuideHistory();
     }, TITLE_FADE_MS);
   }
 
@@ -2314,6 +2425,9 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     if (guideStep < GUIDE_STEPS.length) {
       setGuideLabel(GUIDE_STEPS[guideStep].label);
     }
+    // Marked once the drop has run its course, so the mark covers all of it --
+    // the rocks arrive one after another, not in the same tick.
+    markGuideState();
   }
 
   function finishGuide() {
@@ -2341,6 +2455,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         guideBusy = true;
         guideDelay(finishGuide, SETTLE_MS);
       }
+      markGuideState();
       return;
     }
 
