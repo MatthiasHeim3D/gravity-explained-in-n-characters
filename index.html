@@ -444,10 +444,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var APPLE_MASS_KG = 0.18;          // a medium 180 g apple
   var APPLE_RADIUS_METERS = 0.04;    // 8 cm physical diameter
   var STONE_DENSITY = 2700;          // kg/m³, typical solid rock
-  var DUCK_MASS_KG = 0.95;            // a typical adult mallard
-  var DUCK_PHYSICAL_WIDTH = 0.50;     // roughly beak-to-tail length
-  var DUCK_HYDRO_RADIUS = 0.065;
-  var DUCK_VOLUME_M3 = 0.0018;
+  var DUCK_REFERENCE_WIDTH = 0.50;
+  var DUCK_PHYSICAL_WIDTH = 0.20;     // compact display scale
+  var DUCK_SCALE = DUCK_PHYSICAL_WIDTH / DUCK_REFERENCE_WIDTH;
+  var DUCK_MASS_KG = 0.95 * Math.pow(DUCK_SCALE, 3);
+  var DUCK_HYDRO_RADIUS = 0.065 * DUCK_SCALE;
+  var DUCK_VOLUME_M3 = 0.0018 * Math.pow(DUCK_SCALE, 3);
   var STONE_DROP_CHANCE = 0.25;
   var DUCK_DROP_CHANCE = 0.15;
   var STONE_MIN_SCALE = 0.5;
@@ -1960,9 +1962,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var buoyancyVolumeCenter = null;
     var buoyancyForcePoint = null;
     if (isDuck) {
-      // A mallard-sized body with its centre of mass low in the breast. Applying
-      // buoyancy above that point makes a tipped duck right itself naturally.
-      var duckCenterOfMass = Physics.Vec2(0.055, 0.115);
+      // Keep the centre of mass low in the breast. Applying buoyancy above that
+      // point makes a tipped duck right itself naturally at any display scale.
+      var duckCenterOfMass = Physics.Vec2(
+        0.055 * DUCK_SCALE,
+        0.115 * DUCK_SCALE
+      );
       var physicalHeight = physicalWidth * asset.bounds.height / asset.bounds.width;
       var centeredInertia = massKg *
         (physicalWidth * physicalWidth + physicalHeight * physicalHeight) / 12;
@@ -1973,8 +1978,14 @@ var prepareWithSegments = Pretext.prepareWithSegments;
           (duckCenterOfMass.x * duckCenterOfMass.x +
            duckCenterOfMass.y * duckCenterOfMass.y)
       });
-      buoyancyVolumeCenter = Physics.Vec2(0.055, 0.110);
-      buoyancyForcePoint = Physics.Vec2(0.055, 0.055);
+      buoyancyVolumeCenter = Physics.Vec2(
+        0.055 * DUCK_SCALE,
+        0.110 * DUCK_SCALE
+      );
+      buoyancyForcePoint = Physics.Vec2(
+        0.055 * DUCK_SCALE,
+        0.055 * DUCK_SCALE
+      );
     }
 
     var angularSpeedRange = isDuck ? 20 : 80;
