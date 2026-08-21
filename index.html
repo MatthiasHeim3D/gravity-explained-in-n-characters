@@ -316,7 +316,7 @@ body {
 }
 
 .guide-label {
-  font-size: clamp(.85rem, 2.6vw, 1.1rem);
+  font-size: clamp(1rem, 3.2vw, 1.35rem);
   color: var(--muted);
   transition: opacity .45s ease, transform .45s ease;
 }
@@ -328,8 +328,8 @@ body {
    enough that it does not compete with the falling fruit. */
 .guide-tap {
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   opacity: 0;
   transition: opacity .45s ease;
 }
@@ -350,20 +350,20 @@ body {
 }
 
 .guide-tap::after {
-  inset: 12px;
+  inset: 15px;
   background: var(--water-line);
   animation: tap-dot 2.4s ease-out infinite;
 }
 
 @keyframes tap-ring {
   0%        { transform: scale(.42); opacity: 0; }
-  16%       { transform: scale(.42); opacity: .85; }
+  16%       { transform: scale(.42); opacity: .5; }
   60%, 100% { transform: scale(1);   opacity: 0; }
 }
 
 @keyframes tap-dot {
-  0%, 40%, 100% { transform: scale(1);   opacity: .38; }
-  14%           { transform: scale(.72); opacity: .75; }
+  0%, 40%, 100% { transform: scale(1);   opacity: .24; }
+  14%           { transform: scale(.72); opacity: .45; }
 }
 
 /* Kept up in the dry air at the top: apples and the duck bob about the
@@ -403,8 +403,8 @@ body {
   .guide-label,
   .guide-tap { transition-duration: .01ms; transform: none; }
   .guide-reset { transition-duration: .01ms; transform: translate(-50%, 0); }
-  .guide-tap::before { animation: none; opacity: .5; transform: scale(1); }
-  .guide-tap::after { animation: none; opacity: .5; }
+  .guide-tap::before { animation: none; opacity: .3; transform: scale(1); }
+  .guide-tap::after { animation: none; opacity: .3; }
 }
 
 .sr-only {
