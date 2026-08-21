@@ -9,6 +9,7 @@ repository on 2026-08-21. The original `128 × 128` viewBox is preserved.
 | `green-apple.svg` | U+1F34F | `svg/emoji_u1f34f.svg` | `6d77bcfb6d4ddcbda553350e45eb72512970530365cb01f8759684f2c6f6f9a1` |
 | `rock.svg` | U+1FAA8 | `svg/emoji_u1faa8.svg` | `a7a384c68af855e4836ff8311a72fe8706f188a63ecb7dd696b58b44f1cef1ce` |
 | `duck.svg` | U+1F986 | `svg/emoji_u1f986.svg` | `6df3807f86fa99488c82ee02b25279134975d27cda73455d836e698b80a311be` |
+| `fish.svg` | U+1F41F | `svg/emoji_u1f41f.svg` | `bf89fbbd462068a856afd027333f883f4c44c820788a176240d2a8c5b7b5d02d` |
 
 `duck.svg` is locally modified to remove the two orange leg/foot paths. The
 SHA-256 of the unmodified upstream file was

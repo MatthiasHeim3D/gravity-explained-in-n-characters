@@ -319,7 +319,7 @@ body {
 
 <header class="masthead">
   <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
-  <p class="hint" id="hint">Tap or click anywhere to drop a duck, apple, or stone into the lake. Drag them around, or let them sink.</p>
+  <p class="hint" id="hint">Drop ten rocks, then a fish, then a duck. Apples follow. Drag anything around.</p>
   <a class="github-link" href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener" aria-label="View source on GitHub">
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
   </a>
@@ -450,8 +450,10 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var DUCK_MASS_KG = 0.95 * Math.pow(DUCK_SCALE, 3);
   var DUCK_HYDRO_RADIUS = 0.065 * DUCK_SCALE;
   var DUCK_VOLUME_M3 = 0.0018 * Math.pow(DUCK_SCALE, 3);
-  var STONE_DROP_CHANCE = 0.25;
-  var DUCK_DROP_CHANCE = 0.15;
+  var FISH_PHYSICAL_WIDTH = 0.18;
+  var FISH_HYDRO_RADIUS = 0.055;
+  var FISH_MASS_KG = 0.12;
+  var FISH_VOLUME_M3 = 0.00012;       // 120 g of displaced fresh water
   var STONE_MIN_SCALE = 0.5;
   var STONE_MAX_SCALE = 2;
   var WATER_DENSITY = 1000;          // kg/m³ at ordinary conditions
@@ -459,9 +461,11 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var APPLE_DRAG_COEFFICIENT = 0.47; // approximately spherical
   var STONE_DRAG_COEFFICIENT = 0.8;  // irregular/bluff body
   var DUCK_DRAG_COEFFICIENT = 0.6;
+  var FISH_DRAG_COEFFICIENT = 0.2;   // streamlined side profile
   var APPLE_ROTATIONAL_DRAG = 0.2;
   var STONE_ROTATIONAL_DRAG = 0.8;
   var DUCK_ROTATIONAL_DRAG = 1.1;
+  var FISH_ROTATIONAL_DRAG = 0.6;
   var AIR_LINEAR_DAMPING = 0.001;
   var AIR_ANGULAR_DAMPING = 0.001;
   var WATER_LINEAR_DAMPING = 2.5;
@@ -478,9 +482,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   // Visible bounds and convex hulls measured from the downloaded Noto Color
   // Emoji SVG alpha. Apple hulls start at y=28 so the decorative leaf and stem
-  // remain visible without becoming load-bearing collision parts. The duck is
-  // compound so its neck and beak do not turn the transparent space into a
-  // solid collider.
+  // remain visible without becoming load-bearing collision parts. The duck and
+  // fish are compound so their transparent gaps do not become solid colliders.
   var NOTO_EMOJI = {
     redApple: {
       src: 'assets/noto-color-emoji/red-apple.svg',
@@ -509,6 +512,20 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         [[7,22], [8,21], [10,20], [28,16], [30,16], [31,17],
          [32,30], [19,30], [15,29], [12,28], [8,26], [7,25]]
       ]
+    },
+    fish: {
+      src: 'assets/noto-color-emoji/fish.svg',
+      bounds: { x: 5, y: 27, width: 119, height: 81 },
+      hulls: [
+        [[5,73], [13,61], [23,51], [45,41], [79,41], [104,71],
+         [104,82], [89,106], [50,106], [32,102], [21,96], [8,85]],
+        [[42,44], [47,37], [56,28], [59,28], [66,31], [72,35],
+         [79,41], [85,48], [88,52], [96,64], [96,65], [42,65]],
+        [[96,64], [122,53], [123,54], [123,55], [121,63], [118,69],
+         [113,78], [96,78]],
+        [[100,74], [113,74], [120,88], [121,91], [122,95], [120,95],
+         [118,94], [100,83]]
+      ]
     }
   };
 
@@ -527,7 +544,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var physicsDebugEnabled = false;
   var physicsDebugAllowed = !/(^|\.)gitlab\.io$/i.test(window.location.hostname) &&
     window.location.hostname.toLowerCase() !== 'matthiasheim3d.github.io';
-  var firstSpawn = true;
+  var spawnCount = 0;
 
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -1613,8 +1630,10 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       var isStone = apple.el.classList.contains('stone');
       var isGreen = apple.el.classList.contains('green-apple');
       var isDuck = apple.el.classList.contains('duck');
-      var color = isDuck ? '8, 145, 178' :
-        (isStone ? '161, 98, 7' : (isGreen ? '22, 163, 74' : '225, 29, 72'));
+      var isFish = apple.el.classList.contains('fish');
+      var color = isFish ? '37, 99, 235' : (isDuck ? '8, 145, 178' :
+        (isStone ? '161, 98, 7' :
+        (isGreen ? '22, 163, 74' : '225, 29, 72')));
 
       // The dotted rectangle is the alpha-measured SVG box; the solid polygon
       // is the actual collision fixture, transformed by the Planck body.
@@ -1905,34 +1924,41 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   function dropApple() {
     var rect = content.getBoundingClientRect();
-    var typeRoll = Math.random();
-    var isDuck = firstSpawn || typeRoll < DUCK_DROP_CHANCE;
-    var isStone = !isDuck &&
-      typeRoll < DUCK_DROP_CHANCE + STONE_DROP_CHANCE;
-    firstSpawn = false;
+    var sequenceIndex = spawnCount++;
+    var isStone = sequenceIndex < 10;
+    var isFish = sequenceIndex === 10;
+    var isDuck = sequenceIndex === 11;
     var sizeScale = isStone
       ? STONE_MIN_SCALE + Math.random() * (STONE_MAX_SCALE - STONE_MIN_SCALE)
       : 1;
-    var assetName = isDuck ? 'duck' : (isStone
+    var assetName = isFish ? 'fish' : (isDuck ? 'duck' : (isStone
       ? 'rock'
-      : (Math.random() < 0.5 ? 'redApple' : 'greenApple'));
+      : (Math.random() < 0.5 ? 'redApple' : 'greenApple')));
     var asset = NOTO_EMOJI[assetName];
-    var physicalWidth = isDuck
+    var physicalWidth = isFish
+      ? FISH_PHYSICAL_WIDTH
+      : (isDuck
       ? DUCK_PHYSICAL_WIDTH
-      : APPLE_RADIUS_METERS * 2 * sizeScale;
+      : APPLE_RADIUS_METERS * 2 * sizeScale);
     var sourceToScreen = physicalWidth * PIXELS_PER_METER / asset.bounds.width;
     var visualWidth = asset.bounds.width * sourceToScreen;
     var visualHeight = asset.bounds.height * sourceToScreen;
     var visualRadius = Math.max(visualWidth, visualHeight) / 2;
-    var radiusMeters = isDuck
+    var radiusMeters = isFish
+      ? FISH_HYDRO_RADIUS
+      : (isDuck
       ? DUCK_HYDRO_RADIUS
-      : APPLE_RADIUS_METERS * sizeScale;
-    var volumeM3 = isDuck
+      : APPLE_RADIUS_METERS * sizeScale);
+    var volumeM3 = isFish
+      ? FISH_VOLUME_M3
+      : (isDuck
       ? DUCK_VOLUME_M3
-      : 4 / 3 * Math.PI * Math.pow(radiusMeters, 3);
-    var massKg = isDuck
+      : 4 / 3 * Math.PI * Math.pow(radiusMeters, 3));
+    var massKg = isFish
+      ? FISH_MASS_KG
+      : (isDuck
       ? DUCK_MASS_KG
-      : (isStone ? STONE_DENSITY * volumeM3 : APPLE_MASS_KG);
+      : (isStone ? STONE_DENSITY * volumeM3 : APPLE_MASS_KG));
     var collision = makeCollisionHull(asset, physicalWidth);
     // Planck is two-dimensional, so fixture density is mass per hull area.
     var fixtureDensity = massKg / collision.area;
@@ -1942,7 +1968,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var el = document.createElement('span');
     var image = document.createElement('img');
     var y = -visualHeight / 2 - 4 - Math.random() * 18;
-    var angleRange = isDuck ? 8 : 18;
+    var angleRange = isDuck || isFish ? 8 : 18;
     var angle = (-angleRange + Math.random() * angleRange * 2) * Math.PI / 180;
     var body = physicsWorld.createDynamicBody({
       position: Physics.Vec2(x / PIXELS_PER_METER, y / PIXELS_PER_METER),
@@ -1954,8 +1980,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     for (var h = 0; h < collision.hulls.length; h++) {
       body.createFixture(new Physics.Polygon(collision.hulls[h]), {
         density: fixtureDensity,
-        friction: isDuck ? 0.28 : 0.38,
-        restitution: isDuck ? 0.06 : 0.14
+        friction: isFish ? 0.16 : (isDuck ? 0.28 : 0.38),
+        restitution: isFish ? 0.04 : (isDuck ? 0.06 : 0.14)
       });
     }
 
@@ -1986,9 +2012,23 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         0.055 * DUCK_SCALE,
         0.055 * DUCK_SCALE
       );
+    } else if (isFish) {
+      var fishCenterOfMass = Physics.Vec2(-0.012, 0.013);
+      var fishHeight = physicalWidth * asset.bounds.height / asset.bounds.width;
+      var fishInertia = massKg *
+        (physicalWidth * physicalWidth + fishHeight * fishHeight) / 12;
+      body.setMassData({
+        mass: massKg,
+        center: fishCenterOfMass,
+        I: fishInertia + massKg *
+          (fishCenterOfMass.x * fishCenterOfMass.x +
+           fishCenterOfMass.y * fishCenterOfMass.y)
+      });
+      buoyancyVolumeCenter = Physics.Vec2(-0.012, 0.008);
+      buoyancyForcePoint = Physics.Vec2(-0.012, -0.004);
     }
 
-    var angularSpeedRange = isDuck ? 20 : 80;
+    var angularSpeedRange = isDuck || isFish ? 20 : 80;
     body.setAngularVelocity(
       (-angularSpeedRange + Math.random() * angularSpeedRange * 2) * Math.PI / 180
     );
@@ -2008,17 +2048,20 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       volumeM3: volumeM3,
       buoyancyVolumeCenter: buoyancyVolumeCenter,
       buoyancyForcePoint: buoyancyForcePoint,
-      dragCoefficient: isDuck ? DUCK_DRAG_COEFFICIENT :
-        (isStone ? STONE_DRAG_COEFFICIENT : APPLE_DRAG_COEFFICIENT),
-      rotationalDragCoefficient: isDuck ? DUCK_ROTATIONAL_DRAG :
-        (isStone ? STONE_ROTATIONAL_DRAG : APPLE_ROTATIONAL_DRAG),
+      dragCoefficient: isFish ? FISH_DRAG_COEFFICIENT :
+        (isDuck ? DUCK_DRAG_COEFFICIENT :
+        (isStone ? STONE_DRAG_COEFFICIENT : APPLE_DRAG_COEFFICIENT)),
+      rotationalDragCoefficient: isFish ? FISH_ROTATIONAL_DRAG :
+        (isDuck ? DUCK_ROTATIONAL_DRAG :
+        (isStone ? STONE_ROTATIONAL_DRAG : APPLE_ROTATIONAL_DRAG)),
       dragPointer: null,
       inWater: false,
       lastSplash: -Infinity
     };
 
-    el.className = 'apple ' + (isDuck ? 'duck' : (isStone ? 'stone' :
-      (assetName === 'redApple' ? 'red-apple' : 'green-apple')));
+    el.className = 'apple ' + (isFish ? 'fish' : (isDuck ? 'duck' :
+      (isStone ? 'stone' :
+      (assetName === 'redApple' ? 'red-apple' : 'green-apple'))));
     el.setAttribute('aria-hidden', 'true');
     el.style.width = visualWidth + 'px';
     el.style.height = visualHeight + 'px';
