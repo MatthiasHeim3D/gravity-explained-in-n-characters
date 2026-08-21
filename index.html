@@ -457,6 +457,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var AIR_ANGULAR_DAMPING = 0.001;
   var WATER_LINEAR_DAMPING = 2.5;
   var WATER_ANGULAR_DAMPING = 1.2;
+  var TEXT_HULL_OFFSET = 4;
   var PIXELS_PER_METER = APPLE_COLLISION_RADIUS / APPLE_RADIUS_METERS;
   // Planck's 5 mm default tolerance is intended for roughly metre-sized
   // bodies. Here it creates a 4.875 px skin around every small hull. A 0.1 mm
@@ -927,10 +928,62 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     return clipped;
   }
 
+  function collisionHullInPixels(apple, offsetX, offsetY) {
+    var points = [];
+    for (var i = 0; i < apple.collisionVertices.length; i++) {
+      var worldPoint = apple.body.getWorldPoint(apple.collisionVertices[i]);
+      points.push({
+        x: worldPoint.x * PIXELS_PER_METER - (offsetX || 0),
+        y: worldPoint.y * PIXELS_PER_METER - (offsetY || 0)
+      });
+    }
+    return points;
+  }
+
+  // Move every vertex exactly `distance` pixels along the average of its two
+  // outward edge normals. The hull is convex, so the expanded result remains a
+  // stable convex polygon and follows body rotation without an axis-aligned box.
+  function offsetHullAlongVertexNormals(points, distance) {
+    if (points.length < 3 || distance === 0) return points.slice();
+    var twiceArea = 0;
+    for (var i = 0; i < points.length; i++) {
+      var point = points[i];
+      var next = points[(i + 1) % points.length];
+      twiceArea += point.x * next.y - next.x * point.y;
+    }
+    var winding = twiceArea >= 0 ? 1 : -1;
+
+    function edgeNormal(a, b) {
+      var dx = b.x - a.x;
+      var dy = b.y - a.y;
+      var edgeLength = Math.sqrt(dx * dx + dy * dy) || 1;
+      return {
+        x: winding * dy / edgeLength,
+        y: winding * -dx / edgeLength
+      };
+    }
+
+    var expanded = [];
+    for (i = 0; i < points.length; i++) {
+      var previous = points[(i - 1 + points.length) % points.length];
+      point = points[i];
+      next = points[(i + 1) % points.length];
+      var incomingNormal = edgeNormal(previous, point);
+      var outgoingNormal = edgeNormal(point, next);
+      var normalX = incomingNormal.x + outgoingNormal.x;
+      var normalY = incomingNormal.y + outgoingNormal.y;
+      var normalLength = Math.sqrt(normalX * normalX + normalY * normalY) || 1;
+      expanded.push({
+        x: point.x + normalX / normalLength * distance,
+        y: point.y + normalY / normalLength * distance
+      });
+    }
+    return expanded;
+  }
+
   function polygonIntervalForBand(polygon, top, bottom) {
-    var padding = polygon.padding;
-    var clipped = clipPolygonAtY(polygon.points, top - padding, true);
-    clipped = clipPolygonAtY(clipped, bottom + padding, false);
+    var clipped = clipPolygonAtY(polygon.points, top, true);
+    clipped = clipPolygonAtY(clipped, bottom, false);
     if (!clipped.length) return null;
 
     var left = Infinity;
@@ -939,7 +992,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       left = Math.min(left, clipped[i].x);
       right = Math.max(right, clipped[i].x);
     }
-    return { left: left - padding, right: right + padding };
+    return { left: left, right: right };
   }
 
   // Turn every text line into one or more horizontal slots by carving the
@@ -1174,29 +1227,24 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     var obstacles = [];
     for (var i = 0; i < apples.length; i++) {
       var apple = apples[i];
-      var points = [];
+      var points = offsetHullAlongVertexNormals(
+        collisionHullInPixels(apple, rect.left, rect.top),
+        TEXT_HULL_OFFSET
+      );
       var minX = Infinity, minY = Infinity;
       var maxX = -Infinity, maxY = -Infinity;
-      for (var j = 0; j < apple.collisionVertices.length; j++) {
-        var worldPoint = apple.body.getWorldPoint(apple.collisionVertices[j]);
-        var point = {
-          x: worldPoint.x * PIXELS_PER_METER - rect.left,
-          y: worldPoint.y * PIXELS_PER_METER - rect.top
-        };
-        points.push(point);
+      for (var j = 0; j < points.length; j++) {
+        var point = points[j];
         minX = Math.min(minX, point.x);
         maxX = Math.max(maxX, point.x);
         minY = Math.min(minY, point.y);
         maxY = Math.max(maxY, point.y);
       }
 
-      var padding = 5;
-      if (maxX + padding <= 0 || minX - padding >= rect.width ||
-          maxY + padding <= 0 || minY - padding >= rect.height) continue;
+      if (maxX <= 0 || minX >= rect.width || maxY <= 0 || minY >= rect.height) continue;
 
       obstacles.push({
-        points: points,
-        padding: padding
+        points: points
       });
     }
     return obstacles;
@@ -1425,6 +1473,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     delete activeDrags[pointerId];
     drag.apple.dragPointer = null;
     drag.apple.el.classList.remove('is-dragging');
+    drag.apple.body.setSleepingAllowed(true);
+    drag.apple.body.setAwake(true);
   }
 
   function makeAppleDraggable(apple) {
@@ -1449,6 +1499,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       };
       apple.dragPointer = e.pointerId;
       apple.el.classList.add('is-dragging');
+      apple.body.setSleepingAllowed(false);
       apple.body.setAngularVelocity(0);
       apple.body.setAwake(true);
       ensureAppleFrame();
@@ -1540,12 +1591,11 @@ var prepareWithSegments = Pretext.prepareWithSegments;
         apple.visualWidth, apple.visualHeight);
       ctx.restore();
 
+      var collisionPoints = collisionHullInPixels(apple, 0, 0);
       ctx.beginPath();
-      for (var j = 0; j < apple.collisionVertices.length; j++) {
-        var worldPoint = apple.body.getWorldPoint(apple.collisionVertices[j]);
-        var px = worldPoint.x * PIXELS_PER_METER;
-        var py = worldPoint.y * PIXELS_PER_METER;
-        if (j === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      for (var j = 0; j < collisionPoints.length; j++) {
+        if (j === 0) ctx.moveTo(collisionPoints[j].x, collisionPoints[j].y);
+        else ctx.lineTo(collisionPoints[j].x, collisionPoints[j].y);
       }
       ctx.closePath();
       ctx.setLineDash([]);
@@ -1555,6 +1605,25 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       ctx.fill();
       ctx.stroke();
 
+      var textHull = offsetHullAlongVertexNormals(collisionPoints, TEXT_HULL_OFFSET);
+      ctx.beginPath();
+      for (j = 0; j < textHull.length; j++) {
+        if (j === 0) ctx.moveTo(textHull[j].x, textHull[j].y);
+        else ctx.lineTo(textHull[j].x, textHull[j].y);
+      }
+      ctx.closePath();
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = 'rgba(168, 85, 247, .95)';
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(168, 85, 247, .95)';
+      for (j = 0; j < textHull.length; j++) {
+        ctx.beginPath();
+        ctx.arc(textHull[j].x, textHull[j].y, 1.75, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       var center = apple.body.getWorldCenter();
       var centerX = center.x * PIXELS_PER_METER;
       var centerY = center.y * PIXELS_PER_METER;
@@ -1563,6 +1632,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       ctx.lineTo(centerX + 4, centerY);
       ctx.moveTo(centerX, centerY - 4);
       ctx.lineTo(centerX, centerY + 4);
+      ctx.strokeStyle = 'rgba(' + color + ', .95)';
       ctx.stroke();
     }
 
@@ -1571,7 +1641,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches
       ? 'rgba(226, 232, 240, .82)'
       : 'rgba(30, 41, 59, .78)';
-    ctx.fillText('PHYSICS  ·  Esc to hide', 12, 20);
+    ctx.fillText('PHYSICS  |  solid: collider  |  violet: text hull +4 px  |  Esc: hide', 12, 20);
   }
 
   function initPhysicsDebug() {
@@ -1770,7 +1840,9 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     render();
     drawPhysicsDebug();
 
-    if (apples.some(function (apple) { return apple.body.isAwake(); })) {
+    if (apples.some(function (apple) {
+      return apple.dragPointer != null || apple.body.isAwake();
+    })) {
       appleFrame = requestAnimationFrame(animateApples);
     } else {
       appleFrame = 0;
