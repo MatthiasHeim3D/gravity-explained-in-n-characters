@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Gravity explained in n characters</title>
+<title>Buoyancy explained in n characters</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="An LLM experiment: gravity explained at whatever length fits inside a box you resize yourself.">
+<meta name="description" content="An LLM experiment: buoyancy explained at whatever length fits inside a lake you resize yourself.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f1ef" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#12110f" media="(prefers-color-scheme: dark)">
@@ -98,28 +98,12 @@ body {
     max(16px, env(safe-area-inset-left));
 }
 
-/* ---------------------------------------------------------------- header */
-.masthead {
-  position: relative;
-  flex: none;
-  text-align: center;
-  padding-bottom: 14px;
-}
-
-.title {
-  margin: 0;
-  padding-inline: 36px;
-  font-family: var(--mono);
-  font-size: clamp(1.05rem, 3.6vw, 1.6rem);
-  font-weight: 600;
-  letter-spacing: -.01em;
-  line-height: 1.3;
-}
-
+/* ----------------------------------------------------------- source link */
 .github-link {
-  position: absolute;
-  top: -4px;
-  right: 0;
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 20;
   display: inline-grid;
   place-items: center;
   width: 32px;
@@ -131,20 +115,6 @@ body {
 .github-link:hover { color: var(--ink); background: var(--accent-ring); }
 .github-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .github-link svg { width: 18px; height: 18px; fill: currentColor; }
-
-#charCount {
-  display: inline-block;
-  min-width: 1.2em;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.hint {
-  margin: 8px 0 0;
-  min-height: 1.35em;
-  font-size: clamp(.78rem, 2.4vw, .875rem);
-  color: var(--muted);
-}
 
 /* ----------------------------------------------------------------- stage */
 #stage {
@@ -309,6 +279,134 @@ body {
   #boxContent { font-size: 14px; }
 }
 
+/* ----------------------------------------------------------------- guide */
+/* The narration lives in the dry air above the waterline. Its height is set
+   from the lake's own geometry in layoutLake(), so the copy stays centred in
+   whatever room is left over the water rather than at a guessed fraction. */
+.guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 33%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding-inline: 24px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.guide-title,
+.guide-label {
+  margin: 0;
+  font-family: var(--mono);
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.guide-title {
+  font-size: clamp(1.5rem, 5.5vw, 2.4rem);
+  font-weight: 600;
+  letter-spacing: -.02em;
+  transition: opacity .6s ease, transform .6s ease;
+}
+
+.guide-label {
+  font-size: clamp(.85rem, 2.6vw, 1.1rem);
+  color: var(--muted);
+  transition: opacity .45s ease, transform .45s ease;
+}
+
+.guide-title.is-visible,
+.guide-label.is-visible { opacity: 1; transform: none; }
+
+/* A ring breathing out of a dot: enough motion to read as "tap here", little
+   enough that it does not compete with the falling fruit. */
+.guide-tap {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  opacity: 0;
+  transition: opacity .45s ease;
+}
+
+.guide-tap.is-visible { opacity: 1; }
+
+.guide-tap::before,
+.guide-tap::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+
+.guide-tap::before {
+  inset: 0;
+  border: 1.5px solid var(--water-line);
+  animation: tap-ring 2.4s ease-out infinite;
+}
+
+.guide-tap::after {
+  inset: 12px;
+  background: var(--water-line);
+  animation: tap-dot 2.4s ease-out infinite;
+}
+
+@keyframes tap-ring {
+  0%        { transform: scale(.42); opacity: 0; }
+  16%       { transform: scale(.42); opacity: .85; }
+  60%, 100% { transform: scale(1);   opacity: 0; }
+}
+
+@keyframes tap-dot {
+  0%, 40%, 100% { transform: scale(1);   opacity: .38; }
+  14%           { transform: scale(.72); opacity: .75; }
+}
+
+/* Kept up in the dry air at the top: apples and the duck bob about the
+   middle of this band once they are afloat, and would sit over the button. */
+.guide-reset {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 7px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .8rem;
+  cursor: pointer;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  pointer-events: none;
+  transition: opacity .5s ease, transform .5s ease,
+              color .15s ease, border-color .15s ease;
+}
+
+.guide-reset.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+.guide-reset:hover { color: var(--ink); border-color: var(--muted); }
+.guide-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-title,
+  .guide-label,
+  .guide-tap { transition-duration: .01ms; transform: none; }
+  .guide-reset { transition-duration: .01ms; transform: translate(-50%, 0); }
+  .guide-tap::before { animation: none; opacity: .5; transform: scale(1); }
+  .guide-tap::after { animation: none; opacity: .5; }
+}
+
 .sr-only {
   position: absolute;
   width: 1px; height: 1px;
@@ -322,13 +420,9 @@ body {
 </head>
 <body>
 
-<header class="masthead">
-  <h1 class="title">Gravity explained in <span id="charCount">n</span> characters</h1>
-  <p class="hint" id="hint">Drop ten rocks, then a fish, then a duck. Apples follow. Drag anything around.</p>
-  <a class="github-link" href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener" aria-label="View source on GitHub">
-    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-  </a>
-</header>
+<a class="github-link" href="https://github.com/MatthiasHeim3D/gravity-explained-in-n-characters" target="_blank" rel="noopener" aria-label="View source on GitHub">
+  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+</a>
 
 <main id="stage">
   <!-- Drawn from the water's rectangle by renderLake(); empty until then. -->
@@ -360,6 +454,13 @@ body {
   <section id="box" aria-label="Lake holding the explanation">
     <p id="boxContent"></p>
   </section>
+
+  <div class="guide" id="guide">
+    <p class="guide-title" id="guideTitle">Buoyancy</p>
+    <p class="guide-label" id="guideLabel" aria-live="polite"></p>
+    <span class="guide-tap" id="guideTap" aria-hidden="true"></span>
+    <button class="guide-reset" id="resetButton" type="button">Start over</button>
+  </div>
 </main>
 
 <p id="status" class="sr-only" role="status" aria-live="polite"></p>
@@ -393,8 +494,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var stage   = document.getElementById('stage');
   var box     = document.getElementById('box');
   var content = document.getElementById('boxContent');
-  var countEl = document.getElementById('charCount');
   var statusEl = document.getElementById('status');
+  var guide = document.getElementById('guide');
+  var guideTitle = document.getElementById('guideTitle');
+  var guideLabel = document.getElementById('guideLabel');
+  var guideTap = document.getElementById('guideTap');
+  var resetButton = document.getElementById('resetButton');
   var lake = document.getElementById('lake');
   var lakeGround = document.getElementById('lakeGround');
   var lakeGroundClip = document.getElementById('lakeGroundClip');
@@ -550,8 +655,6 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   var physicsDebugEnabled = false;
   var physicsDebugAllowed = !/(^|\.)gitlab\.io$/i.test(window.location.hostname) &&
     window.location.hostname.toLowerCase() !== 'matthiasheim3d.github.io';
-  var spawnCount = 0;
-
   function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
   function makeCollisionHull(asset, physicalWidth) {
@@ -662,6 +765,8 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     box.style.top    = '';
     box.style.width  = Math.round(w) + 'px';
     box.style.height = Math.round(h) + 'px';
+    // Everything above the water, down to the box's own top edge.
+    guide.style.height = Math.max(0, Math.round(stageH() - LAKE_BED - h)) + 'px';
 
     renderLake();
     syncVesselBodies();
@@ -1197,7 +1302,6 @@ var prepareWithSegments = Pretext.prepareWithSegments;
       if (content.textContent !== text) content.textContent = text;
     }
 
-    if (countEl.textContent !== String(key)) countEl.textContent = key;
     announce(key);
   }
 
@@ -1279,7 +1383,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     announceTimer = setTimeout(function () {
       announced = key;
       statusEl.textContent = key
-        ? 'Gravity explained in ' + key + ' characters'
+        ? 'Buoyancy explained in ' + key + ' characters'
         : 'Box too small to show any text';
     }, 400);
   }
@@ -1949,12 +2053,12 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     }
   }
 
-  function dropApple() {
+  // kind is 'rock', 'fish', 'duck' or 'apple'.
+  function dropApple(kind) {
     var rect = content.getBoundingClientRect();
-    var sequenceIndex = spawnCount++;
-    var isStone = sequenceIndex < 10;
-    var isFish = sequenceIndex === 10;
-    var isDuck = sequenceIndex === 11;
+    var isStone = kind === 'rock';
+    var isFish = kind === 'fish';
+    var isDuck = kind === 'duck';
     var sizeScale = isStone
       ? STONE_MIN_SCALE + Math.random() * (STONE_MAX_SCALE - STONE_MIN_SCALE)
       : 1;
@@ -2110,13 +2214,158 @@ var prepareWithSegments = Pretext.prepareWithSegments;
     ensureAppleFrame();
   }
 
+  /* ---------------------------------------------------------------- guide */
+
+  // A short guided run: a title, then one claim about density per tap, then
+  // free play with apples, then the way back to the beginning. Each step names
+  // the line to show and what a tap on it drops.
+  var GUIDE_STEPS = [
+    { label: 'Buoyancy', drop: null },                              // the title
+    { label: 'Objects denser than water sink',      drop: 'rock'  },
+    { label: 'Objects as dense as water hover',     drop: 'fish'  },
+    { label: 'Objects less dense than water float', drop: 'duck'  },
+    { label: '',                                    drop: 'apple' }
+  ];
+  var TITLE_HOLD_MS = 1900;    // how long "Buoyancy" stands before it leaves
+  var TITLE_FADE_MS = 600;     // matches the .guide-title transition
+  var LABEL_FADE_MS = 450;     // matches the .guide-label transition
+  var ROCK_SPACING_MS = 140;   // one rock after another, not a single clump
+  var SETTLE_MS = 800;         // a beat between the last drop and the next line
+  var MAX_APPLES = 5;
+
+  var guideStep = 0;
+  var guideBusy = false;       // a drop is still playing out
+  var applesDropped = 0;
+  var guideTimers = [];
+
+  function guideDelay(fn, ms) {
+    var id = setTimeout(fn, ms);
+    guideTimers.push(id);
+    return id;
+  }
+
+  function clearGuideTimers() {
+    for (var i = 0; i < guideTimers.length; i++) clearTimeout(guideTimers[i]);
+    guideTimers = [];
+  }
+
+  // Swap the line under the title: fade out whatever stands there, then fade
+  // the replacement in, so the two never cross-dissolve into each other.
+  function setGuideLabel(text) {
+    var showing = guideLabel.classList.contains('is-visible');
+    if (!text) {
+      guideLabel.classList.remove('is-visible');
+      guideDelay(function () { guideLabel.textContent = ''; }, LABEL_FADE_MS);
+      return;
+    }
+    if (!showing) {
+      guideLabel.textContent = text;
+      guideLabel.classList.add('is-visible');
+      return;
+    }
+    guideLabel.classList.remove('is-visible');
+    guideDelay(function () {
+      guideLabel.textContent = text;
+      guideLabel.classList.add('is-visible');
+    }, LABEL_FADE_MS);
+  }
+
+  // Rocks are dropped at random sizes, so the average one covers this much of
+  // the bed. The floor is a bowl and the rocks roll into it, which is what the
+  // packing factor allows for.
+  function rockCountForLake() {
+    var averageScale = (STONE_MIN_SCALE + STONE_MAX_SCALE) / 2;
+    var rockWidth = APPLE_RADIUS_METERS * 2 * averageScale * PIXELS_PER_METER;
+    return clamp(Math.round(box.clientWidth / (rockWidth * 0.9)), 4, 24);
+  }
+
+  function startGuide() {
+    clearGuideTimers();
+    guideStep = 0;
+    guideBusy = true;
+    applesDropped = 0;
+    resetButton.classList.remove('is-visible');
+    guideLabel.classList.remove('is-visible');
+    guideLabel.textContent = '';
+    guideTap.classList.remove('is-visible');
+    guideTitle.textContent = GUIDE_STEPS[0].label;
+    // One frame of delay so the transition has a state to start from.
+    requestAnimationFrame(function () {
+      guideTitle.classList.add('is-visible');
+    });
+    guideDelay(endTitle, TITLE_FADE_MS + TITLE_HOLD_MS);
+  }
+
+  function endTitle() {
+    if (guideStep !== 0) return;
+    clearGuideTimers();
+    guideTitle.classList.remove('is-visible');
+    guideDelay(function () {
+      guideStep = 1;
+      guideBusy = false;
+      setGuideLabel(GUIDE_STEPS[1].label);
+      guideTap.classList.add('is-visible');
+    }, TITLE_FADE_MS);
+  }
+
+  function advanceGuide() {
+    guideStep++;
+    guideBusy = false;
+    if (guideStep < GUIDE_STEPS.length) {
+      setGuideLabel(GUIDE_STEPS[guideStep].label);
+    }
+  }
+
+  function finishGuide() {
+    guideStep = GUIDE_STEPS.length;
+    guideBusy = false;
+    guideTap.classList.remove('is-visible');
+    guideDelay(function () { resetButton.classList.add('is-visible'); }, LABEL_FADE_MS);
+  }
+
+  function resetGuide() {
+    clearGuideTimers();
+    for (var i = apples.length - 1; i >= 0; i--) removeApple(apples[i], i);
+    queueRender();
+    startGuide();
+  }
+
+  function handleTap() {
+    if (guideStep === 0) { endTitle(); return; }   // a tap cuts the title short
+    if (guideBusy || guideStep >= GUIDE_STEPS.length) return;
+
+    var kind = GUIDE_STEPS[guideStep].drop;
+    if (kind === 'apple') {
+      dropApple('apple');
+      if (++applesDropped >= MAX_APPLES) {
+        guideBusy = true;
+        guideDelay(finishGuide, SETTLE_MS);
+      }
+      return;
+    }
+
+    guideBusy = true;
+    if (kind === 'rock') {
+      var count = rockCountForLake();
+      for (var i = 0; i < count; i++) {
+        guideDelay(function () { dropApple('rock'); }, i * ROCK_SPACING_MS);
+      }
+      guideDelay(advanceGuide, (count - 1) * ROCK_SPACING_MS + SETTLE_MS);
+    } else {
+      dropApple(kind);
+      guideDelay(advanceGuide, SETTLE_MS);
+    }
+  }
+
+  resetButton.addEventListener('click', resetGuide);
+
   // Distinguish a tap/click from a resize drag so grabbing a handle does not
   // accidentally rain apples. The release can be retargeted by pointer capture,
   // hence the window-level listeners.
   var tapStarts = Object.create(null);
   window.addEventListener('pointerdown', function (e) {
     if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    if (e.target.closest && e.target.closest('.apple')) return;
+    if (e.target.closest && e.target.closest('.apple, .guide-reset')) return;
     tapStarts[e.pointerId] = { x: e.clientX, y: e.clientY, moved: false };
   }, true);
 
@@ -2131,7 +2380,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   window.addEventListener('pointerup', function (e) {
     var tap = tapStarts[e.pointerId];
     delete tapStarts[e.pointerId];
-    if (tap && !tap.moved) dropApple();
+    if (tap && !tap.moved) handleTap();
   }, true);
 
   window.addEventListener('pointercancel', function (e) {
@@ -2155,6 +2404,7 @@ var prepareWithSegments = Pretext.prepareWithSegments;
   }, 120));
 
   initPhysicsDebug();
+  startGuide();
   measure();
   layoutLake();
   render();

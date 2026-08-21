@@ -62,10 +62,12 @@ Large language models have an incredible ability to stretch and squash language 
 
 2. **Interact**
 
-   - Tap or click anywhere to drop an apple or a stone into the lake.
-   - Drag them around, or let them sink; the text flows around whatever is in the water.
+   - A short guided run starts by itself: a title, then one line about density per tap.
+   - Tap or click anywhere to drop what the current line is about -- enough rocks to
+     line the bed, then the fish, then the duck, then up to five apples.
+   - Drag anything around, or let it sink; the text flows around whatever is in the water.
    - Resize the browser window to resize the lake. The explanation updates to fit.
-   - The character count is displayed in the header.
+   - Start over resets the lake and replays the run.
 
 ## Front-end dependency
 
