@@ -20,11 +20,12 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 TARGET_RANGE_FROM = 1     # Minimum character count that must be populated
-TARGET_RANGE_TO = 500     # Maximum character count that must be populated (inclusive)
-MAX_ATTEMPTS_PER_LENGTH = 20   # Refinement attempts before a slot is given up on
+TARGET_RANGE_TO = 2000     # Maximum character count that must be populated (inclusive)
+MAX_ATTEMPTS_PER_LENGTH = 1   # Refinement attempts before a slot is given up on
 MAX_WORKERS = 8           # Parallel slots in flight
 RENAME_RETRIES = 10       # Retries when Windows briefly locks the table file
 SAVE_INTERVAL = 3.0       # Minimum seconds between unforced checkpoint writes
+SMALL_DELTA = 4           # Deltas at or below this get "tweak one word" guidance
 MODEL = "google/gemini-2.5-flash-lite"
 TEMPERATURE = 0.8
 
@@ -51,18 +52,53 @@ def initial_prompt(character_count):
     )
 
 
-def refine_prompt(character_count, attempt_text):
-    delta = character_count - len(attempt_text)
-    direction = (
-        f"It is {delta} characters too short; expand it."
-        if delta > 0
-        else f"It is {-delta} characters too long; tighten it."
+def refine_prompt(character_count, base_text, recent_lengths):
+    """Ask for a length-corrected rewrite of the closest attempt so far.
+
+    The model cannot count characters, so it is told the exact delta to apply and,
+    when the attempts are oscillating around the target, which lengths it has already
+    produced - otherwise it tends to bounce between the same two rewrites.
+    """
+    delta = character_count - len(base_text)
+    if delta > 0:
+        direction = f"Make it exactly {delta} character(s) LONGER."
+    else:
+        direction = f"Make it exactly {-delta} character(s) SHORTER."
+
+    hints = [
+        f"This text is {len(base_text)} characters, but it must be exactly "
+        f"{character_count}. {direction}"
+    ]
+
+    if abs(delta) <= SMALL_DELTA:
+        hints.append(
+            "This is a tiny adjustment: swap a single word for a synonym of the right "
+            "length, or add or remove one short word or an article - do not rewrite the "
+            "whole text."
+        )
+
+    if len(recent_lengths) >= 2:
+        overshoots = sum(1 for n in recent_lengths if n > character_count)
+        undershoots = sum(1 for n in recent_lengths if n < character_count)
+        if overshoots and undershoots:
+            hints.append(
+                "Your recent attempts were "
+                + ", ".join(str(n) for n in recent_lengths)
+                + f" characters, overshooting and undershooting {character_count} in "
+                "turn. Stop rewriting from scratch: take the text below and change only "
+                "the exact number of characters named above."
+            )
+        elif len(set(recent_lengths)) == 1:
+            hints.append(
+                f"Your last attempts were all {recent_lengths[0]} characters. The edit "
+                "is not being applied - change the wording this time."
+            )
+
+    hints.append(
+        f"Keep it a fluent explanation of {TOPIC} with no formulas, on one line, and "
+        "return only the corrected text."
     )
-    return (
-        f"That version is {len(attempt_text)} characters, but it must be exactly "
-        f"{character_count}. {direction} Keep it a fluent explanation of {TOPIC} with no "
-        f"formulas, and return only the corrected text."
-    )
+    return " ".join(hints) + "\n\nTEXT:\n" + base_text
 
 
 def normalize(text):
@@ -200,13 +236,25 @@ def fill_length(api_key, table, target):
     if target in table:
         return True
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": initial_prompt(target)},
-    ]
+    attempts = []  # (distance_from_target, text) for every candidate produced
+    recent_lengths = []
 
     for attempt in range(1, MAX_ATTEMPTS_PER_LENGTH + 1):
-        raw = chat(api_key, messages)
+        if not attempts:
+            prompt = initial_prompt(target)
+        else:
+            # Refine the closest candidate so far rather than the most recent one:
+            # a bad swing must not throw away the progress already made.
+            base_text = min(attempts)[1]
+            prompt = refine_prompt(target, base_text, recent_lengths[-3:])
+
+        raw = chat(
+            api_key,
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+        )
         if not raw:
             continue
         text = normalize(raw)
@@ -223,13 +271,14 @@ def fill_length(api_key, table, target):
         if table.offer(text):
             table.save()
 
-        messages.append({"role": "assistant", "content": text})
-        messages.append({"role": "user", "content": refine_prompt(target, text)})
-        # Keep the conversation short so the model stays anchored on the target.
-        if len(messages) > 8:
-            messages = messages[:2] + messages[-4:]
+        attempts.append((abs(len(text) - target), text))
+        recent_lengths.append(len(text))
 
-    print(f"  {target}: no exact match after {MAX_ATTEMPTS_PER_LENGTH} attempts")
+    closest = min(attempts)[0] if attempts else None
+    print(
+        f"  {target}: no exact match after {MAX_ATTEMPTS_PER_LENGTH} attempts"
+        + (f" (closest was off by {closest})" if closest is not None else "")
+    )
     return False
 
 
