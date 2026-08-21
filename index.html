@@ -2218,15 +2218,18 @@ var prepareWithSegments = Pretext.prepareWithSegments;
 
   /* ---------------------------------------------------------------- guide */
 
-  // A short guided run: a title, then one claim about density per tap, then
-  // free play with apples, then the way back to the beginning. Each step names
-  // the line to show and what a tap on it drops.
+  // A short guided run: a title, then one word per tap for what the water does
+  // with what lands in it, then free play with apples, then the way back to the
+  // beginning. Each step names the line to show and what a tap on it drops.
+  // The lines name the phenomenon rather than stating the rule: buoyancy is a
+  // comparison against the containing fluid, so a label that named water would
+  // read as if water were the reference for every case rather than this one.
   var GUIDE_STEPS = [
-    { label: 'Buoyancy', drop: null },                              // the title
-    { label: 'Objects denser than water sink',      drop: 'rock'  },
-    { label: 'Objects as dense as water hover',     drop: 'fish'  },
-    { label: 'Objects less dense than water float', drop: 'duck'  },
-    { label: '',                                    drop: 'apple' }
+    { label: 'Buoyancy', drop: null },   // the title
+    { label: 'Sinking',  drop: 'rock'  },
+    { label: 'Hovering', drop: 'fish'  },
+    { label: 'Floating', drop: 'duck'  },
+    { label: '',         drop: 'apple' }
   ];
   var TITLE_HOLD_MS = 1900;    // how long "Buoyancy" stands before it leaves
   var TITLE_FADE_MS = 600;     // matches the .guide-title transition
